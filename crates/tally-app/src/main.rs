@@ -1,6 +1,6 @@
 use iced::widget::{column, text, text_input};
 use iced::{Element, Size};
-use tally_core::Activity;
+use tally_core::ActivityName;
 
 fn main() -> iced::Result {
     iced::application(Tally::default, Tally::update, Tally::view)
@@ -12,7 +12,7 @@ fn main() -> iced::Result {
 #[derive(Default)]
 struct Tally {
     input: String,
-    last: Option<Activity>,
+    last: Option<ActivityName>,
 }
 
 #[derive(Debug, Clone)]
@@ -26,9 +26,8 @@ impl Tally {
         match message {
             Message::InputChanged(input) => self.input = input,
             Message::Submitted => {
-                let name = self.input.trim();
-                if !name.is_empty() {
-                    self.last = Some(Activity::new(name));
+                if let Ok(activity) = ActivityName::parse(&self.input) {
+                    self.last = Some(activity);
                     self.input.clear();
                 }
             }
@@ -37,7 +36,7 @@ impl Tally {
 
     fn view(&self) -> Element<'_, Message> {
         let last = match &self.last {
-            Some(activity) => format!("Last: {}", activity.name),
+            Some(activity) => format!("Last: {activity}"),
             None => String::from("Nothing logged yet"),
         };
 
