@@ -1,54 +1,47 @@
-use iced::widget::{column, text, text_input};
-use iced::{Element, Size};
-use tally_core::ActivityName;
+//! tally: asks what you're doing, every few minutes, from the menu bar.
 
-fn main() -> iced::Result {
-    iced::application(Tally::default, Tally::update, Tally::view)
-        .title("Tally")
-        .window_size(Size::new(400.0, 160.0))
-        .run()
-}
+mod app;
+mod clock;
+mod format;
+mod icons;
+mod logging;
+mod pending;
+mod platform;
+mod status;
+mod theme;
+mod windows;
 
-#[derive(Default)]
-struct Tally {
-    input: String,
-    last: Option<ActivityName>,
-}
+use app::App;
+use platform::paths::Paths;
 
-#[derive(Debug, Clone)]
-enum Message {
-    InputChanged(String),
-    Submitted,
-}
-
-impl Tally {
-    fn update(&mut self, message: Message) {
-        match message {
-            Message::InputChanged(input) => self.input = input,
-            Message::Submitted => {
-                if let Ok(activity) = ActivityName::parse(&self.input) {
-                    self.last = Some(activity);
-                    self.input.clear();
-                }
-            }
+fn main() -> anyhow::Result<()> {
+    let paths = Paths::locate()?;
+    // If this fails, `App::boot` reports it in the data-file error window.
+    let _ = paths.create_data_dir();
+    let _log = logging::init(&paths);
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting");
+    let _instance = match paths.lock_instance() {
+        Ok(Some(lock)) => Some(lock),
+        Ok(None) => {
+            tracing::warn!("tally is already running; exiting");
+            return Ok(());
         }
-    }
+        // Can't tell (e.g. the folder is unwritable): carry on, boot shows the problem.
+        Err(error) => {
+            tracing::warn!(%error, "could not take the single-instance lock");
+            None
+        }
+    };
 
-    fn view(&self) -> Element<'_, Message> {
-        let last = match &self.last {
-            Some(activity) => format!("Last: {activity}"),
-            None => String::from("Nothing logged yet"),
-        };
-
-        column![
-            text("What are you doing?").size(20),
-            text_input("e.g. Writing docs", &self.input)
-                .on_input(Message::InputChanged)
-                .on_submit(Message::Submitted),
-            text(last),
-        ]
-        .spacing(10)
-        .padding(20)
-        .into()
+    let mut daemon = iced::daemon(move || App::boot(paths.clone()), App::update, App::view)
+        .title(App::title)
+        .theme(App::theme)
+        .style(App::style)
+        .subscription(App::subscription)
+        .default_font(theme::UI);
+    for font in theme::FONT_FILES {
+        daemon = daemon.font(font);
     }
+    daemon.run()?;
+    Ok(())
 }
