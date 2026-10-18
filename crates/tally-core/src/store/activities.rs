@@ -196,6 +196,61 @@ impl Store {
         Ok(())
     }
 
+    /// Moves every activity in category `from` to category `to`. An activity whose
+    /// name already exists in `to` is merged into it. Unknown `from` does nothing.
+    pub fn rename_category(&mut self, from: &str, to: &str) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        let Some(from_id) = tx
+            .query_row("SELECT id FROM categories WHERE name = ?1", [from], |row| {
+                row.get::<_, i64>(0)
+            })
+            .optional()?
+        else {
+            return Ok(());
+        };
+        let to_id = ensure_category(&tx, to)?;
+        if to_id == from_id {
+            // Only the spelling changed.
+            tx.execute(
+                "UPDATE categories SET name = ?1 WHERE id = ?2",
+                params![to, from_id],
+            )?;
+        } else {
+            let moving: Vec<(ActivityId, String)> = tx
+                .prepare("SELECT id, name FROM activities WHERE category_id = ?1")?
+                .query_map([from_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            for (id, name) in moving {
+                let target = ActivityName {
+                    category: Some(to.to_owned()),
+                    name,
+                };
+                match find(&tx, &target)? {
+                    Some(into) => {
+                        for table in ["entries", "corrections"] {
+                            tx.execute(
+                                &format!(
+                                    "UPDATE {table} SET activity_id = ?1 WHERE activity_id = ?2"
+                                ),
+                                [into, id],
+                            )?;
+                        }
+                        tx.execute("DELETE FROM activities WHERE id = ?1", [id])?;
+                    }
+                    None => {
+                        tx.execute(
+                            "UPDATE activities SET category_id = ?1 WHERE id = ?2",
+                            [to_id, id],
+                        )?;
+                    }
+                }
+            }
+            delete_empty_categories(&tx)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn set_archived(&mut self, id: ActivityId, archived: bool, now: Timestamp) -> Result<()> {
         require(&self.conn, id)?;
         let value = archived.then(|| now.as_second());

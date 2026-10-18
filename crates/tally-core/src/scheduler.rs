@@ -116,6 +116,8 @@ pub enum Event {
         until: KeepUntil,
     },
     Pause(Option<SignedDuration>),
+    /// Pauses until today's working hours end; tracking starts again next working day.
+    EndDay,
     Resume,
     /// `None` means "away / discard" for that row.
     AwayResolved {
@@ -236,6 +238,7 @@ impl Scheduler {
             Event::Snoozed(duration) => self.snooze(duration, now, &mut actions),
             Event::KeepFor { activity, until } => self.keep_for(activity, until, now, &mut actions),
             Event::Pause(duration) => self.pause(duration, now, &mut actions),
+            Event::EndDay => self.end_day(now, &mut actions),
             Event::Resume => self.resume(now),
             Event::AwayResolved { before, away } => {
                 self.resolve_away(before, away, now, &mut actions)
@@ -429,6 +432,16 @@ impl Scheduler {
         self.state = State::Paused {
             until: duration.map(|d| now + d),
         };
+    }
+
+    fn end_day(&mut self, now: Timestamp, actions: &mut Vec<Action>) {
+        let Some(end) = self.period_end(now) else {
+            return;
+        };
+        self.pause(None, now, actions);
+        if let State::Paused { until } = &mut self.state {
+            *until = Some(end);
+        }
     }
 
     fn resume(&mut self, now: Timestamp) {

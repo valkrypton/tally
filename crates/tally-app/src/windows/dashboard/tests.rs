@@ -241,3 +241,48 @@ fn corrections_go_to_the_viewed_day_or_today() {
     dashboard.update(Message::Unit(RangeUnit::Week));
     assert_eq!(dashboard.correction_day(), date(2026, 10, 7));
 }
+
+#[test]
+fn renaming_prefills_the_full_name_and_merges_on_conflict() {
+    let mut dashboard = dashboard();
+    assert_eq!(
+        dashboard.update(Message::Rename(2)),
+        Some(Outcome::Focus(rename_id()))
+    );
+    assert_eq!(dashboard.rename.as_ref().unwrap().input, "Work: Meetings");
+    dashboard.update(Message::RenameInput(": ".into()));
+    assert_eq!(dashboard.update(Message::SaveRename), None);
+    assert!(dashboard.rename.as_ref().unwrap().invalid);
+    dashboard.update(Message::RenameInput("Admin: Email".into()));
+    assert_eq!(
+        dashboard.update(Message::SaveRename),
+        Some(Outcome::Rename {
+            id: 2,
+            to: act("Admin: Email")
+        })
+    );
+    dashboard.conflict(3);
+    assert_eq!(
+        dashboard.update(Message::SaveRename),
+        Some(Outcome::Merge { from: 2, into: 3 })
+    );
+    dashboard.saved(Ok(()));
+    assert!(dashboard.rename.is_none());
+}
+
+#[test]
+fn renaming_a_category_needs_a_plain_name() {
+    let mut dashboard = dashboard();
+    dashboard.update(Message::RenameCategory("Work".into()));
+    assert_eq!(dashboard.rename.as_ref().unwrap().input, "Work");
+    dashboard.update(Message::RenameInput("A: B".into()));
+    assert_eq!(dashboard.update(Message::SaveRename), None);
+    dashboard.update(Message::RenameInput(" Job ".into()));
+    assert_eq!(
+        dashboard.update(Message::SaveRename),
+        Some(Outcome::RenameCategory {
+            from: "Work".into(),
+            to: "Job".into()
+        })
+    );
+}

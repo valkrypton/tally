@@ -11,12 +11,13 @@ use iced::futures::{SinkExt, Stream, StreamExt};
 use tray_icon::menu::MenuEvent;
 use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
 
-use super::tray::{MENU_ASK_NOW, MENU_OPEN, MENU_PAUSE, MENU_QUIT, TrayRect};
+use super::tray::{MENU_ASK_NOW, MENU_END_DAY, MENU_OPEN, MENU_PAUSE, MENU_QUIT, TrayRect};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuCommand {
     AskNow,
     PauseOrResume,
+    EndDay,
     Open,
     Quit,
 }
@@ -34,6 +35,7 @@ pub fn menu_command(id: &str) -> Option<MenuCommand> {
     match id {
         MENU_ASK_NOW => Some(MenuCommand::AskNow),
         MENU_PAUSE => Some(MenuCommand::PauseOrResume),
+        MENU_END_DAY => Some(MenuCommand::EndDay),
         MENU_OPEN => Some(MenuCommand::Open),
         MENU_QUIT => Some(MenuCommand::Quit),
         _ => None,

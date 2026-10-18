@@ -7,6 +7,7 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 pub const MENU_ASK_NOW: &str = "ask-now";
 pub const MENU_PAUSE: &str = "pause";
+pub const MENU_END_DAY: &str = "end-day";
 pub const MENU_OPEN: &str = "open";
 pub const MENU_QUIT: &str = "quit";
 
@@ -68,6 +69,7 @@ impl Tray {
         menu.append_items(&[
             &MenuItem::with_id(MENU_ASK_NOW, "Ask now", true, None),
             &pause,
+            &MenuItem::with_id(MENU_END_DAY, "End day", true, None),
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(MENU_OPEN, "Open tally", true, None),
             &MenuItem::with_id(MENU_QUIT, "Quit tally", true, None),

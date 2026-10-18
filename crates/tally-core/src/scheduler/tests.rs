@@ -565,3 +565,18 @@ fn clock_jumping_backwards_never_records_negative_time() {
     assert!(records(&actions).is_empty());
     assert!(h.s.cursor() >= t(9, 15), "the cursor never moves backwards");
 }
+
+#[test]
+fn ending_the_day_pauses_until_working_hours_end() {
+    let mut h = Harness::at_nine();
+    h.send(Event::Pause(None), t(9, 5));
+    h.send(Event::EndDay, t(9, 10));
+    assert_eq!(
+        h.s.state(),
+        &State::Paused {
+            until: Some(t(18, 0))
+        }
+    );
+    assert!(h.run_until(t(18, 0), 0).is_empty());
+    assert_eq!(h.s.state(), &State::OffSchedule);
+}

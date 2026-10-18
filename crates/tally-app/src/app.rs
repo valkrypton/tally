@@ -532,6 +532,7 @@ impl App {
             }
             PlatformEvent::Menu(MenuCommand::AskNow) => self.dispatch(CoreEvent::AskNow),
             PlatformEvent::Menu(MenuCommand::PauseOrResume) => self.toggle_pause(),
+            PlatformEvent::Menu(MenuCommand::EndDay) => self.dispatch(CoreEvent::EndDay),
             PlatformEvent::Menu(MenuCommand::Open) => self.open_main(),
             PlatformEvent::Menu(MenuCommand::Quit) => self.quit(),
             PlatformEvent::Hotkey(id) => {
@@ -618,8 +619,51 @@ impl App {
                 }
                 self.refresh(clock::now())
             }
+            dashboard::Outcome::Rename { id, to } => {
+                let Some(core) = &mut self.core else {
+                    return Task::none();
+                };
+                let result = match core.store.rename(id, &to) {
+                    Ok(Rename::Done) => Ok(()),
+                    Ok(Rename::Conflict(existing)) => {
+                        if let Some(dashboard) = &mut self.dashboard {
+                            dashboard.conflict(existing);
+                        }
+                        return Task::none();
+                    }
+                    Err(error) => Err(error.to_string()),
+                };
+                if let Some(dashboard) = &mut self.dashboard {
+                    dashboard.saved(result);
+                }
+                self.refresh(clock::now())
+            }
+            dashboard::Outcome::Merge { from, into } => {
+                let Some(core) = &mut self.core else {
+                    return Task::none();
+                };
+                let result = core.store.merge(from, into).map_err(|e| e.to_string());
+                if let Some(dashboard) = &mut self.dashboard {
+                    dashboard.saved(result);
+                }
+                self.refresh(clock::now())
+            }
+            dashboard::Outcome::RenameCategory { from, to } => {
+                let Some(core) = &mut self.core else {
+                    return Task::none();
+                };
+                let result = core
+                    .store
+                    .rename_category(&from, &to)
+                    .map_err(|e| e.to_string());
+                if let Some(dashboard) = &mut self.dashboard {
+                    dashboard.saved(result);
+                }
+                self.refresh(clock::now())
+            }
             dashboard::Outcome::Focus(id) => operation::focus(id),
             dashboard::Outcome::TogglePause => self.toggle_pause(),
+            dashboard::Outcome::EndDay => self.dispatch(CoreEvent::EndDay),
             dashboard::Outcome::OpenMain => {
                 self.close(WindowKind::Dashboard).chain(self.open_main())
             }

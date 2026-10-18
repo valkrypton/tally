@@ -139,3 +139,31 @@ fn empty_categories_are_cleaned_up() {
         .unwrap();
     assert_eq!(count, 0);
 }
+
+#[test]
+fn renaming_a_category_moves_its_activities_and_merges_clashes() {
+    let mut store = Store::open_in_memory().unwrap();
+    record(&mut store, "Work: Meeting", at(0, 9, 0), at(0, 10, 0));
+    record(&mut store, "Work: Code", at(0, 10, 0), at(0, 10, 30));
+    record(&mut store, "Job: Meeting", at(0, 11, 0), at(0, 11, 15));
+    store.rename_category("work", "Job").unwrap();
+    let rows = store.activities().unwrap();
+    let names: Vec<String> = rows.iter().map(|r| r.name.to_string()).collect();
+    assert_eq!(rows.len(), 2, "{names:?}");
+    assert_eq!(
+        rows.iter()
+            .find(|r| r.name == act("Job: Meeting"))
+            .unwrap()
+            .total_seconds,
+        4500
+    );
+    assert!(rows.iter().any(|r| r.name == act("Job: Code")));
+    store.rename_category("Job", "JOB").unwrap();
+    assert!(
+        store
+            .activities()
+            .unwrap()
+            .iter()
+            .any(|r| r.name == act("JOB: Code"))
+    );
+}
