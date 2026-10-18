@@ -1,6 +1,7 @@
-//! The main window: a sidebar with Activities, Export and Settings.
+//! The main window: a sidebar with Calendar, Activities, Export and Settings.
 
 pub mod activities;
+pub mod calendar;
 pub mod export;
 pub mod settings;
 
@@ -8,9 +9,11 @@ use iced::alignment::Vertical;
 use iced::widget::{Space, button, column, container, row, text};
 use iced::{Element, Length, Padding, Size};
 use jiff::civil::Date;
+use jiff::tz::TimeZone;
 use tally_core::settings::Settings;
 
 use self::activities::Activities;
+use self::calendar::Calendar;
 use self::export::Export;
 use self::settings::SettingsView;
 use super::KeyPress;
@@ -24,6 +27,7 @@ const SIDEBAR_WIDTH: f32 = 200.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
+    Calendar,
     Activities,
     Export,
     Settings,
@@ -32,6 +36,7 @@ pub enum Section {
 #[derive(Debug, Clone)]
 pub enum Message {
     Section(Section),
+    Calendar(calendar::Message),
     Activities(activities::Message),
     Export(export::Message),
     Settings(settings::Message),
@@ -41,6 +46,7 @@ pub enum Message {
 pub enum Outcome {
     /// Switched section: reload its data.
     Opened(Section),
+    Calendar(calendar::Outcome),
     Activities(activities::Outcome),
     Export(export::Outcome),
     Settings(settings::Outcome),
@@ -49,6 +55,7 @@ pub enum Outcome {
 #[derive(Debug, Clone)]
 pub struct MainWindow {
     pub section: Section,
+    pub calendar: Calendar,
     pub activities: Activities,
     pub export: Export,
     pub settings: SettingsView,
@@ -58,9 +65,10 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(today: Date, settings: Settings, data_file: String) -> Self {
+    pub fn new(today: Date, tz: TimeZone, settings: Settings, data_file: String) -> Self {
         Self {
-            section: Section::Activities,
+            section: Section::Calendar,
+            calendar: Calendar::new(today, tz),
             activities: Activities::default(),
             export: Export::new(today),
             settings: SettingsView::new(settings, data_file),
@@ -84,21 +92,23 @@ impl MainWindow {
                 self.section = section;
                 Some(Outcome::Opened(section))
             }
+            Message::Calendar(m) => self.calendar.update(m).map(Outcome::Calendar),
             Message::Activities(m) => self.activities.update(m).map(Outcome::Activities),
             Message::Export(m) => self.export.update(m).map(Outcome::Export),
             Message::Settings(m) => self.settings.update(m).map(Outcome::Settings),
         }
     }
 
-    /// ⌘1/⌘2/⌘3 switch sections; other keys go to the open section.
+    /// ⌘1 to ⌘4 switch sections; other keys go to the open section.
     pub fn key(&mut self, press: &KeyPress) -> Option<Outcome> {
         if press.modifiers.command()
             && let iced::keyboard::Key::Character(c) = press.key.as_ref()
         {
             let section = match c {
-                "1" => Some(Section::Activities),
-                "2" => Some(Section::Export),
-                "3" => Some(Section::Settings),
+                "1" => Some(Section::Calendar),
+                "2" => Some(Section::Activities),
+                "3" => Some(Section::Export),
+                "4" => Some(Section::Settings),
                 _ => None,
             };
             if let Some(section) = section {
@@ -106,6 +116,7 @@ impl MainWindow {
             }
         }
         match self.section {
+            Section::Calendar => self.calendar.key(press).map(Outcome::Calendar),
             Section::Activities => self.activities.key(press).map(Outcome::Activities),
             Section::Settings => self.settings.key(press).map(Outcome::Settings),
             Section::Export => None,
@@ -143,6 +154,7 @@ impl MainWindow {
                     bottom: 16.0,
                     left: 10.0
                 }),
+                nav(Section::Calendar, "Calendar"),
                 nav(Section::Activities, "Activities"),
                 nav(Section::Export, "Export"),
                 nav(Section::Settings, "Settings"),
@@ -157,6 +169,7 @@ impl MainWindow {
         .style(theme::deep_surface);
 
         let section: Element<'_, Message> = match self.section {
+            Section::Calendar => self.calendar.view().map(Message::Calendar),
             Section::Activities => self.activities.view().map(Message::Activities),
             Section::Export => self.export.view().map(Message::Export),
             Section::Settings => self.settings.view().map(Message::Settings),

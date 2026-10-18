@@ -1,6 +1,8 @@
 use jiff::Timestamp;
 use tally_core::ActivityName;
+use tally_core::range::{RangeSpec, RangeUnit};
 use tally_core::scheduler::{NewEntry, Source};
+use tally_core::settings::WeeklySchedule;
 use tally_core::store::Store;
 
 use super::*;
@@ -133,4 +135,37 @@ fn a_broken_data_file_opens_the_error_window_instead_of_a_fresh_database() {
     assert!(app.windows.is_open(WindowKind::DataError));
     assert!(app.data_error.as_ref().unwrap().path.ends_with("tally.db"));
     std::fs::remove_dir_all(&app.paths.data_dir).unwrap();
+}
+
+fn utc(y: i16, mo: i8, d: i8, h: i8, mi: i8) -> Timestamp {
+    jiff::civil::datetime(y, mo, d, h, mi, 0, 0)
+        .to_zoned(TimeZone::UTC)
+        .unwrap()
+        .timestamp()
+}
+
+#[test]
+fn calendar_data_has_a_totals_row_per_day_and_the_week_entries() {
+    let mut store = Store::open_in_memory().unwrap();
+    store
+        .record(&NewEntry {
+            activity: ActivityName::parse("Work: Code").unwrap(),
+            start: utc(2026, 10, 12, 11, 0),
+            end: utc(2026, 10, 12, 12, 0),
+            source: Source::Prompt,
+        })
+        .unwrap();
+    let spec = RangeSpec::new(RangeUnit::Week, jiff::civil::date(2026, 10, 14));
+    let data = calendar_data(
+        &store,
+        spec,
+        &TimeZone::UTC,
+        &WeeklySchedule::default(),
+        utc(2026, 10, 14, 9, 0),
+    )
+    .unwrap();
+    assert_eq!(data.days.len(), 7);
+    assert_eq!(data.days[0].0, jiff::civil::date(2026, 10, 12));
+    assert_eq!(data.days[0].1.seconds, 3600);
+    assert_eq!(data.entries.len(), 1);
 }

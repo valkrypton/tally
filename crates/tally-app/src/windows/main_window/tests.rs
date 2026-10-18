@@ -1,5 +1,6 @@
 use iced::keyboard::{Key, Modifiers};
 use jiff::civil::date;
+use jiff::tz::TimeZone;
 
 use super::*;
 
@@ -22,10 +23,36 @@ fn notice_only_while_failing() {
     );
 }
 
+fn main_window() -> MainWindow {
+    MainWindow::new(
+        date(2026, 10, 7),
+        TimeZone::UTC,
+        Settings::default(),
+        String::new(),
+    )
+}
+
+fn cmd(c: &str) -> KeyPress {
+    KeyPress::new(Key::Character(c.into()), Modifiers::COMMAND)
+}
+
 #[test]
 fn command_digits_switch_sections() {
-    let mut window = MainWindow::new(date(2026, 10, 7), Settings::default(), String::new());
-    let press = KeyPress::new(Key::Character("3".into()), Modifiers::COMMAND);
-    assert_eq!(window.key(&press), Some(Outcome::Opened(Section::Settings)));
+    let mut window = main_window();
+    assert_eq!(
+        window.key(&cmd("4")),
+        Some(Outcome::Opened(Section::Settings))
+    );
     assert_eq!(window.section, Section::Settings);
+}
+
+#[test]
+fn opens_on_the_calendar_and_cmd_1_returns_to_it() {
+    let mut window = main_window();
+    assert_eq!(window.section, Section::Calendar);
+    window.update(Message::Section(Section::Export));
+    assert_eq!(
+        window.key(&cmd("1")),
+        Some(Outcome::Opened(Section::Calendar))
+    );
 }

@@ -72,6 +72,7 @@ pub enum Source {
     Late,
     Keep,
     Away,
+    Manual,
 }
 
 impl Source {
@@ -81,6 +82,7 @@ impl Source {
             Source::Late => "late",
             Source::Keep => "keep",
             Source::Away => "away",
+            Source::Manual => "manual",
         }
     }
 }

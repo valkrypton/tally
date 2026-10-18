@@ -36,7 +36,7 @@ first.
 - **Ask now:** the global shortcut (default **⌥⇧T**) opens the prompt when you switch tasks.
 - **The dashboard** opens when you click the menu-bar icon. Click any total to edit it: `-30` takes
   30 minutes off, `+15` adds 15, and `1h 30` sets it.
-- **The main window** (from the dashboard's ≡ menu) holds Activities, Export (CSV or JSON) and Settings.
+- **The main window** (from the dashboard's ≡ menu) holds Calendar (your logged time as a day, week or month), Activities, Export (CSV or JSON) and Settings.
 - **Away time:** when you are away longer than the idle threshold, tally stops asking and, when you
   come back, asks what that time was.
 

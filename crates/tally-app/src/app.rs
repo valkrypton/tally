@@ -13,8 +13,11 @@ use jiff::Timestamp;
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use tally_core::duration::DurationEdit;
-use tally_core::scheduler::{self, Action, Config, Event as CoreEvent, Scheduler, State};
-use tally_core::settings::Settings;
+use tally_core::range::{RangeSpec, RangeUnit};
+use tally_core::scheduler::{
+    self, Action, Config, Event as CoreEvent, NewEntry, Scheduler, Source, State,
+};
+use tally_core::settings::{Settings, WeeklySchedule};
 use tally_core::store::{Rename, Store};
 
 use crate::pending::PendingWrites;
@@ -28,7 +31,9 @@ use crate::windows::KeyPress;
 use crate::windows::away::{self, Away};
 use crate::windows::dashboard::{self, Dashboard};
 use crate::windows::data_error::{self, DataError};
-use crate::windows::main_window::{self, MainWindow, Section, activities, export, settings};
+use crate::windows::main_window::{
+    self, MainWindow, Section, activities, calendar, export, settings,
+};
 use crate::windows::placement::{self, Edge};
 use crate::windows::prompt::{self, Prompt};
 use crate::windows::registry::{Registry, WindowKind};
@@ -362,12 +367,21 @@ impl App {
         }
         self.pending.set_snapshot(core.scheduler.snapshot());
         self.pending.flush(&mut core.store);
+        let recorded = actions.iter().any(|a| matches!(a, Action::Record(_)));
 
         let prompt_task = match final_prompt_action(&actions) {
             Some(Some(prompt)) => self.show_prompt(prompt, now),
             Some(None) => self.close(WindowKind::Prompt),
             None => Task::none(),
         };
+        if recorded
+            && self
+                .main
+                .as_ref()
+                .is_some_and(|m| m.section == Section::Calendar)
+        {
+            self.load_section(Section::Calendar);
+        }
         let refresh_task = self.refresh(now);
         prompt_task.chain(refresh_task)
     }
@@ -704,6 +718,7 @@ impl App {
         };
         let mut main = MainWindow::new(
             self.today(clock::now()),
+            self.tz.clone(),
             core.settings.clone(),
             self.paths.display_database(),
         );
@@ -711,7 +726,7 @@ impl App {
         main.settings
             .set_autostart_error(self.autostart_error.clone());
         self.main = Some(main);
-        self.load_section(Section::Activities);
+        self.load_section(Section::Calendar);
         let (id, open) = window::open(window::Settings {
             size: main_window::SIZE,
             min_size: Some(main_window::MIN_SIZE),
@@ -745,6 +760,21 @@ impl App {
                     Err(error) => main.export.saved(Err(error.to_string())),
                 }
             }
+            Section::Calendar => {
+                let today = clock::now().to_zoned(self.tz.clone()).date();
+                let logged_until = core.scheduler.cursor().min(clock::now());
+                let data = calendar_data(
+                    &core.store,
+                    main.calendar.spec(),
+                    &self.tz,
+                    &core.settings.schedule,
+                    logged_until,
+                );
+                match data {
+                    Ok(data) => main.calendar.set_data(data, today),
+                    Err(error) => main.calendar.saved(Err(error.to_string())),
+                }
+            }
             Section::Settings => {}
         }
     }
@@ -755,6 +785,7 @@ impl App {
                 self.load_section(section);
                 Task::none()
             }
+            main_window::Outcome::Calendar(outcome) => self.calendar_outcome(outcome),
             main_window::Outcome::Activities(outcome) => self.activities_outcome(outcome),
             main_window::Outcome::Export(export::Outcome::RangeChanged) => {
                 self.load_section(Section::Export);
@@ -797,6 +828,47 @@ impl App {
         }
         self.load_section(Section::Activities);
         Task::none()
+    }
+
+    fn calendar_outcome(&mut self, outcome: calendar::Outcome) -> Task<Message> {
+        let Some(core) = &mut self.core else {
+            return Task::none();
+        };
+        let result = match outcome {
+            calendar::Outcome::Focus(id) => return operation::focus(id),
+            calendar::Outcome::RangeChanged => {
+                self.load_section(Section::Calendar);
+                return Task::none();
+            }
+            calendar::Outcome::Rename { id, to } => match core.store.rename(id, &to) {
+                Ok(Rename::Done) => Ok(()),
+                Ok(Rename::Conflict(existing)) => {
+                    if let Some(main) = &mut self.main {
+                        main.calendar.conflict(existing);
+                    }
+                    return Task::none();
+                }
+                Err(error) => Err(error),
+            },
+            calendar::Outcome::Merge { from, into } => core.store.merge(from, into),
+            calendar::Outcome::LogTime {
+                activity,
+                start,
+                end,
+            } => core.store.record(&NewEntry {
+                activity,
+                start,
+                end,
+                source: Source::Manual,
+            }),
+        };
+        if let Some(main) = &mut self.main {
+            main.calendar
+                .saved(result.map_err(|error| error.to_string()));
+        }
+        self.load_section(Section::Calendar);
+        // Shows a failed write in the tray; a rename also changes the dashboard.
+        self.refresh(clock::now())
     }
 
     fn write_export(&mut self, path: Option<PathBuf>) {
@@ -1015,6 +1087,36 @@ impl App {
         }
         iced::exit()
     }
+}
+
+/// Everything the Calendar draws for `spec`: the entries and a totals row for each day.
+fn calendar_data(
+    store: &Store,
+    spec: RangeSpec,
+    tz: &TimeZone,
+    schedule: &WeeklySchedule,
+    logged_until: Timestamp,
+) -> tally_core::Result<calendar::CalendarData> {
+    let range = spec.resolve(tz)?;
+    let entries = store.entries(&range)?;
+    // ponytail: one totals query per day (<=42); one grouped query if months get slow
+    let days = range
+        .first_day
+        .series(jiff::ToSpan::days(1))
+        .take_while(|day| *day <= range.last_day)
+        .map(|day| {
+            Ok((
+                day,
+                store.totals(&RangeSpec::new(RangeUnit::Day, day).resolve(tz)?)?,
+            ))
+        })
+        .collect::<tally_core::Result<_>>()?;
+    Ok(calendar::CalendarData {
+        entries,
+        days,
+        schedule: schedule.clone(),
+        logged_until,
+    })
 }
 
 fn popover_settings(size: Size) -> window::Settings {

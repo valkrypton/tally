@@ -487,6 +487,78 @@ pub fn segment(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Sty
     }
 }
 
+/// A tracked block in the calendar: the category colour at 20% fill, 65% edge.
+pub fn calendar_block(color: Color) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        button::Style {
+            background: filled(color.scale_alpha(if hovered { 0.30 } else { 0.20 })),
+            text_color: TEXT_PRIMARY,
+            border: border(color.scale_alpha(0.65), 1.0, R_KEY),
+            ..button::Style::default()
+        }
+    }
+}
+
+/// An untracked working-hours gap. iced borders are solid, so no dashes.
+pub fn calendar_gap(_: &Theme, status: button::Status) -> button::Style {
+    let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+    button::Style {
+        background: hovered.then(|| Background::Color(LAMP_AMBER.scale_alpha(0.08))),
+        text_color: LAMP_AMBER_INK_MUTED,
+        border: border(LAMP_AMBER.scale_alpha(0.45), 1.0, R_KEY),
+        ..button::Style::default()
+    }
+}
+
+fn day_surface(working: bool, today: bool) -> (Color, Border) {
+    let background = if working {
+        Color::from_rgb8(0x16, 0x19, 0x1C)
+    } else {
+        CONSOLE_DEEP
+    };
+    let edge = if today {
+        LAMP_AMBER.scale_alpha(0.45)
+    } else {
+        Color::from_rgb8(0x1C, 0x1F, 0x23)
+    };
+    (background, border(edge, 1.0, R_CONTROL))
+}
+
+/// One day's column in the week and day timelines.
+pub fn calendar_day(working: bool, today: bool) -> impl Fn(&Theme) -> container::Style {
+    move |_| {
+        let (background, border) = day_surface(working, today);
+        container::Style {
+            background: filled(background),
+            border,
+            ..container::Style::default()
+        }
+    }
+}
+
+/// One day's cell in the month grid.
+pub fn month_cell(
+    in_month: bool,
+    working: bool,
+    today: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let (background, border) = day_surface(working, today);
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        button::Style {
+            background: filled(if hovered { CONSOLE_HOVER } else { background }),
+            text_color: if in_month {
+                TEXT_PRIMARY
+            } else {
+                TEXT_DISABLED
+            },
+            border,
+            ..button::Style::default()
+        }
+    }
+}
+
 /// An option button in the prompt's More grid. `focused` is the keyboard focus: amber
 /// wash and outline, like a selected chip.
 pub fn menu_option(focused: bool) -> impl Fn(&Theme, button::Status) -> button::Style {

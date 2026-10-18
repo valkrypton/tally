@@ -1,6 +1,6 @@
 use super::test_support::*;
 use super::*;
-use crate::scheduler::State;
+use crate::scheduler::{NewEntry, Source, State};
 use jiff::civil::date;
 
 #[test]
@@ -63,4 +63,35 @@ fn data_survives_reopening_the_file() {
     let store = Store::open(&path).unwrap();
     assert_eq!(store.suggestions(10).unwrap(), vec![act("Lunch")]);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn version_1_files_migrate_and_accept_manual_entries() {
+    let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+    rusqlite_migration::Migrations::from_slice(&MIGRATIONS[..1])
+        .to_latest(&mut conn)
+        .unwrap();
+    conn.execute_batch(
+        "INSERT INTO activities (id, name) VALUES (1, 'Lunch');
+         INSERT INTO entries (activity_id, start_at, end_at, source) VALUES (1, 100, 200, 'prompt');",
+    )
+    .unwrap();
+    let mut store = Store::init(conn).unwrap();
+    store
+        .record(&NewEntry {
+            activity: act("Lunch"),
+            start: from_secs(300),
+            end: from_secs(400),
+            source: Source::Manual,
+        })
+        .unwrap();
+    let sources: Vec<String> = store
+        .conn()
+        .prepare("SELECT source FROM entries ORDER BY start_at")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(sources, ["prompt", "manual"]);
 }

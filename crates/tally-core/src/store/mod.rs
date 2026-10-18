@@ -2,6 +2,7 @@
 
 mod activities;
 mod edit;
+mod entries;
 mod totals;
 
 use std::path::Path;
@@ -16,11 +17,15 @@ use crate::scheduler::{NewEntry, Snapshot};
 use crate::settings::Settings;
 
 pub use activities::{ActivityRow, Rename};
+pub use entries::EntryRow;
 pub use totals::{ActivityTotal, Group, Totals};
 
 pub type ActivityId = i64;
 
-const MIGRATIONS: &[M<'static>] = &[M::up(include_str!("migrations/001_initial.sql"))];
+const MIGRATIONS: &[M<'static>] = &[
+    M::up(include_str!("migrations/001_initial.sql")),
+    M::up(include_str!("migrations/002_manual_source.sql")),
+];
 
 pub struct Store {
     conn: Connection,
