@@ -72,13 +72,13 @@ const fn weighted(font: Font, weight: Weight) -> Font {
 
 /// Every font file bundled into the binary.
 pub const FONT_FILES: [&[u8]; 7] = [
-    include_bytes!("../assets/fonts/SchibstedGrotesk-Regular.ttf"),
-    include_bytes!("../assets/fonts/SchibstedGrotesk-Medium.ttf"),
-    include_bytes!("../assets/fonts/SchibstedGrotesk-SemiBold.ttf"),
-    include_bytes!("../assets/fonts/SchibstedGrotesk-Bold.ttf"),
-    include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
-    include_bytes!("../assets/fonts/JetBrainsMono-Medium.ttf"),
-    include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf"),
+    include_bytes!("../../assets/fonts/SchibstedGrotesk-Regular.ttf"),
+    include_bytes!("../../assets/fonts/SchibstedGrotesk-Medium.ttf"),
+    include_bytes!("../../assets/fonts/SchibstedGrotesk-SemiBold.ttf"),
+    include_bytes!("../../assets/fonts/SchibstedGrotesk-Bold.ttf"),
+    include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf"),
+    include_bytes!("../../assets/fonts/JetBrainsMono-Medium.ttf"),
+    include_bytes!("../../assets/fonts/JetBrainsMono-Bold.ttf"),
 ];
 
 /// The iced theme. Only its palette is used, by widgets we don't restyle (scrollbars).
