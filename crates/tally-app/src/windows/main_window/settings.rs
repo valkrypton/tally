@@ -373,8 +373,11 @@ impl SettingsView {
             page = page
                 .push(theme::label(format!("Couldn't save settings: {error}")).color(theme::ALERT));
         }
-        page.push(theme::label("Changes save as you make them."))
-            .into()
+        page.push(row![
+            container(theme::label("Changes save as you make them.")).width(Length::Fill),
+            theme::label(concat!("tally ", env!("CARGO_PKG_VERSION"))),
+        ])
+        .into()
     }
 
     fn day_view<'a>(&'a self, index: usize, day: &'a DayHours) -> Element<'a, Message> {

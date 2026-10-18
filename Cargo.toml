@@ -9,3 +9,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 tally-core = { path = "crates/tally-core" }
+
+[profile.release]
+lto = "thin"
+strip = true

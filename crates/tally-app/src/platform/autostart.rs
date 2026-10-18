@@ -17,13 +17,16 @@ fn launcher() -> anyhow::Result<AutoLaunch> {
 /// Makes the OS match the setting. Returns an error message for the Settings screen.
 pub fn apply(enabled: bool) -> Result<(), String> {
     let result = launcher().and_then(|launcher| {
-        let current = launcher.is_enabled().unwrap_or(false);
-        match (enabled, current) {
-            (true, false) => launcher.enable().context("could not enable start at login"),
-            (false, true) => launcher
+        if enabled {
+            // Always rewrite the entry, so it follows tally when it moves (say, from a
+            // build folder to /Applications).
+            launcher.enable().context("could not enable start at login")
+        } else if launcher.is_enabled().unwrap_or(false) {
+            launcher
                 .disable()
-                .context("could not disable start at login"),
-            _ => Ok(()),
+                .context("could not disable start at login")
+        } else {
+            Ok(())
         }
     });
     result.map_err(|error| {

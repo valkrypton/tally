@@ -1,5 +1,8 @@
 //! tally: asks what you're doing, every few minutes, from the menu bar.
 
+// Release builds on Windows are GUI apps: no console window opens next to tally.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod app;
 mod clock;
 mod format;

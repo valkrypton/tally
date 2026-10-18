@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- The app icon: four tally marks and a slash in lamp amber on console night.
+       Drawn on Apple's 1024 grid (an 824 body with a soft shadow below it). -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1E2226"/>
+      <stop offset="1" stop-color="#0E1012"/>
+    </linearGradient>
+    <radialGradient id="lamp" cx="0.5" cy="0.42" r="0.55">
+      <stop offset="0" stop-color="#FFB23E" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FFB23E" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#body)" filter="url(#shadow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#lamp)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#343A40" stroke-width="3"/>
+  <g stroke="#FFB23E" stroke-width="46" stroke-linecap="round">
+    <path d="M377 332v360M467 332v360M557 332v360M647 332v360"/>
+  </g>
+  <path d="M318 628L706 396" stroke="#FFC86E" stroke-width="46" stroke-linecap="round"/>
+</svg>

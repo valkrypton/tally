@@ -12,6 +12,10 @@ pub fn set_accessory() {
         return;
     };
     let app = NSApplication::sharedApplication(mtm);
+    // Already set when running from tally.app, whose Info.plist has LSUIElement.
+    if app.activationPolicy() == NSApplicationActivationPolicy::Accessory {
+        return;
+    }
     if !app.setActivationPolicy(NSApplicationActivationPolicy::Accessory) {
         tracing::warn!("macOS refused the accessory activation policy");
     }

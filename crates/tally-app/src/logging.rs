@@ -17,6 +17,7 @@ pub fn init(paths: &Paths) -> Option<WorkerGuard> {
             .build(&paths.logs)
             .ok()
     });
+    log_panics();
     let builder = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_ansi(false);
@@ -32,4 +33,23 @@ pub fn init(paths: &Paths) -> Option<WorkerGuard> {
             None
         }
     }
+}
+
+/// tally has no console, so a panic would otherwise vanish: write it to the log too.
+fn log_panics() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.payload();
+        let message = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("(no message)");
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_default();
+        tracing::error!(%location, "panic: {message}");
+        default_hook(info);
+    }));
 }

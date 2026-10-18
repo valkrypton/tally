@@ -140,45 +140,79 @@ fn icon(look: TrayLook) -> anyhow::Result<Icon> {
     Icon::from_rgba(icon_pixels(look, color), ICON_SIZE, ICON_SIZE).context("invalid tray icon")
 }
 
-/// Draws the icon as RGBA: a filled rounded square while tracking (the tally mark), an
-/// outlined square off schedule, two bars when paused, and a dot in the top-right
-/// corner (cut out from the shape) while writes are failing.
+/// Draws the icon as RGBA, anti-aliased: the tally mark from the app icon (four strokes
+/// and a slash) while tracking, the same mark dimmed off schedule, two bars when paused,
+/// and a dot in the top-right corner (cut out from the shape) while writes are failing.
 pub fn icon_pixels(look: TrayLook, color: [u8; 3]) -> Vec<u8> {
-    let size = ICON_SIZE as i32;
-    let mut pixels = vec![0u8; (size * size * 4) as usize];
-    let inside_rounded = |x: i32, y: i32, x0: i32, y0: i32, x1: i32, y1: i32, r: i32| {
-        if x < x0 || x > x1 || y < y0 || y > y1 {
-            return false;
-        }
-        let cx = x.clamp(x0 + r, x1 - r);
-        let cy = y.clamp(y0 + r, y1 - r);
-        (x - cx).pow(2) + (y - cy).pow(2) <= r * r
-    };
-    let badge = |x: i32, y: i32, extra: i32| (x - 25).pow(2) + (y - 6).pow(2) <= (5 + extra).pow(2);
+    let size = ICON_SIZE as usize;
+    let mut pixels = vec![0u8; size * size * 4];
     for y in 0..size {
         for x in 0..size {
-            let shape = match look.mode {
-                TrayMode::Tracking => inside_rounded(x, y, 6, 6, 25, 25, 4),
-                TrayMode::OffSchedule => {
-                    inside_rounded(x, y, 6, 6, 25, 25, 4) && !inside_rounded(x, y, 9, 9, 22, 22, 2)
-                }
-                TrayMode::Paused => {
-                    inside_rounded(x, y, 8, 6, 13, 25, 1) || inside_rounded(x, y, 18, 6, 23, 25, 1)
-                }
+            let p = (x as f32 + 0.5, y as f32 + 0.5);
+            let mut alpha = match look.mode {
+                TrayMode::Tracking => tally_mark(p),
+                TrayMode::OffSchedule => tally_mark(p) * OFF_SCHEDULE_ALPHA,
+                TrayMode::Paused => PAUSE_BARS
+                    .iter()
+                    .map(|&(a, b)| cover(distance(p, a, b), PAUSE_RADIUS))
+                    .fold(0.0, f32::max),
             };
-            let on = if look.failing {
-                badge(x, y, 0) || (shape && !badge(x, y, 2))
-            } else {
-                shape
-            };
-            if on {
-                let i = ((y * size + x) * 4) as usize;
-                pixels[i..i + 3].copy_from_slice(&color);
-                pixels[i + 3] = 255;
+            if look.failing {
+                let d = distance(p, BADGE, BADGE);
+                alpha = (alpha * (1.0 - cover(d, BADGE_RADIUS + GAP))).max(cover(d, BADGE_RADIUS));
             }
+            let i = (y * size + x) * 4;
+            pixels[i..i + 3].copy_from_slice(&color);
+            pixels[i + 3] = (alpha * 255.0).round() as u8;
         }
     }
     pixels
+}
+
+type Point = (f32, f32);
+
+const STROKE_RADIUS: f32 = 1.75;
+const GAP: f32 = 1.25;
+const BARS: [(Point, Point); 4] = [
+    ((7.75, 6.0), (7.75, 26.0)),
+    ((13.25, 6.0), (13.25, 26.0)),
+    ((18.75, 6.0), (18.75, 26.0)),
+    ((24.25, 6.0), (24.25, 26.0)),
+];
+const SLASH: (Point, Point) = ((4.25, 22.25), (27.75, 9.75));
+const OFF_SCHEDULE_ALPHA: f32 = 0.4;
+const PAUSE_RADIUS: f32 = 2.25;
+const PAUSE_BARS: [(Point, Point); 2] = [((11.5, 7.5), (11.5, 24.5)), ((20.5, 7.5), (20.5, 24.5))];
+const BADGE: Point = (25.0, 6.0);
+const BADGE_RADIUS: f32 = 5.0;
+
+/// The strokes stop a little short of the slash, so the mark stays readable at 16pt.
+fn tally_mark(p: Point) -> f32 {
+    let to_slash = distance(p, SLASH.0, SLASH.1);
+    let bars = BARS
+        .iter()
+        .map(|&(a, b)| cover(distance(p, a, b), STROKE_RADIUS))
+        .fold(0.0, f32::max);
+    let slash = cover(to_slash, STROKE_RADIUS);
+    (bars * (1.0 - cover(to_slash, STROKE_RADIUS + GAP))).max(slash)
+}
+
+/// How much of a pixel a round-capped stroke covers, from the pixel centre's distance
+/// to the stroke's centre line (a one-pixel ramp gives the anti-aliasing).
+fn cover(distance: f32, radius: f32) -> f32 {
+    (radius - distance + 0.5).clamp(0.0, 1.0)
+}
+
+/// Distance from `p` to the segment `a`–`b`.
+fn distance(p: Point, a: Point, b: Point) -> f32 {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let length_sq = dx * dx + dy * dy;
+    let t = if length_sq == 0.0 {
+        0.0
+    } else {
+        (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / length_sq).clamp(0.0, 1.0)
+    };
+    ((p.0 - a.0 - t * dx).powi(2) + (p.1 - a.1 - t * dy).powi(2)).sqrt()
 }
 
 #[cfg(test)]

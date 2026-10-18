@@ -11,24 +11,30 @@ fn look(mode: TrayMode, failing: bool) -> TrayLook {
 }
 
 #[test]
-fn tracking_is_a_filled_square() {
+fn tracking_is_the_tally_mark() {
     let pixels = icon_pixels(look(TrayMode::Tracking, false), [0, 0, 0]);
     assert_eq!(pixels.len(), (ICON_SIZE * ICON_SIZE * 4) as usize);
-    assert_eq!(alpha(&pixels, 16, 16), 255);
+    assert_eq!(alpha(&pixels, 7, 12), 255, "first stroke");
+    assert_eq!(alpha(&pixels, 24, 24), 255, "last stroke");
+    assert_eq!(alpha(&pixels, 10, 12), 0, "between strokes");
+    assert_eq!(alpha(&pixels, 16, 16), 255, "slash");
     assert_eq!(alpha(&pixels, 1, 1), 0);
 }
 
 #[test]
-fn off_schedule_is_hollow() {
-    let pixels = icon_pixels(look(TrayMode::OffSchedule, false), [0, 0, 0]);
-    assert_eq!(alpha(&pixels, 16, 16), 0);
-    assert_eq!(alpha(&pixels, 7, 16), 255);
+fn off_schedule_is_the_mark_dimmed() {
+    let tracking = icon_pixels(look(TrayMode::Tracking, false), [0, 0, 0]);
+    let off = icon_pixels(look(TrayMode::OffSchedule, false), [0, 0, 0]);
+    let dimmed = alpha(&off, 7, 12);
+    assert!(dimmed > 0 && dimmed < 255, "{dimmed}");
+    assert_eq!(alpha(&off, 10, 12), 0);
+    assert!(alpha(&tracking, 7, 12) > dimmed);
 }
 
 #[test]
 fn paused_shows_two_bars() {
     let pixels = icon_pixels(look(TrayMode::Paused, false), [0, 0, 0]);
-    assert_eq!(alpha(&pixels, 10, 16), 255);
+    assert_eq!(alpha(&pixels, 11, 16), 255);
     assert_eq!(alpha(&pixels, 16, 16), 0);
     assert_eq!(alpha(&pixels, 20, 16), 255);
 }
