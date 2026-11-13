@@ -90,6 +90,20 @@ fn require(conn: &Connection, id: ActivityId) -> Result<()> {
     }
 }
 
+/// Moves `from`'s entries and corrections to `into`, then deletes `from`.
+fn fold_into(conn: &Connection, from: ActivityId, into: ActivityId) -> Result<()> {
+    conn.execute(
+        "UPDATE entries SET activity_id = ?1 WHERE activity_id = ?2",
+        [into, from],
+    )?;
+    conn.execute(
+        "UPDATE corrections SET activity_id = ?1 WHERE activity_id = ?2",
+        [into, from],
+    )?;
+    conn.execute("DELETE FROM activities WHERE id = ?1", [from])?;
+    Ok(())
+}
+
 fn delete_empty_categories(conn: &Connection) -> Result<()> {
     conn.execute(
         "DELETE FROM categories WHERE id NOT IN
@@ -182,15 +196,7 @@ impl Store {
         let tx = self.conn.transaction()?;
         require(&tx, from)?;
         require(&tx, into)?;
-        tx.execute(
-            "UPDATE entries SET activity_id = ?1 WHERE activity_id = ?2",
-            [into, from],
-        )?;
-        tx.execute(
-            "UPDATE corrections SET activity_id = ?1 WHERE activity_id = ?2",
-            [into, from],
-        )?;
-        tx.execute("DELETE FROM activities WHERE id = ?1", [from])?;
+        fold_into(&tx, from, into)?;
         delete_empty_categories(&tx)?;
         tx.commit()?;
         Ok(())
@@ -226,17 +232,7 @@ impl Store {
                     name,
                 };
                 match find(&tx, &target)? {
-                    Some(into) => {
-                        for table in ["entries", "corrections"] {
-                            tx.execute(
-                                &format!(
-                                    "UPDATE {table} SET activity_id = ?1 WHERE activity_id = ?2"
-                                ),
-                                [into, id],
-                            )?;
-                        }
-                        tx.execute("DELETE FROM activities WHERE id = ?1", [id])?;
-                    }
+                    Some(into) => fold_into(&tx, id, into)?,
                     None => {
                         tx.execute(
                             "UPDATE activities SET category_id = ?1 WHERE id = ?2",

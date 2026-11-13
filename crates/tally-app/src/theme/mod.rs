@@ -161,6 +161,19 @@ fn filled(color: Color) -> Option<Background> {
     Some(Background::Color(color))
 }
 
+/// A plain fill with rounded corners and no border.
+fn fill_r(color: Color, radius: f32) -> container::Style {
+    container::Style {
+        background: filled(color),
+        border: border(Color::TRANSPARENT, 0.0, radius),
+        ..container::Style::default()
+    }
+}
+
+fn hovered(status: button::Status) -> bool {
+    matches!(status, button::Status::Hovered | button::Status::Pressed)
+}
+
 /// The outer frame of a popup window: night surface, hairline edge, 14px corners.
 pub fn popup_frame(_: &Theme) -> container::Style {
     container::Style {
@@ -234,13 +247,9 @@ pub fn scrim(_: &Theme) -> container::Style {
     }
 }
 
-/// Raised panel (edit-in-place, add row): raised fill, 8px corners.
+/// Raised panel (edit-in-place, add row, segmented control track): raised fill, 8px corners.
 pub fn raised_panel(_: &Theme) -> container::Style {
-    container::Style {
-        background: filled(CONSOLE_RAISED),
-        border: border(Color::TRANSPARENT, 0.0, R_FIELD),
-        ..container::Style::default()
-    }
+    fill_r(CONSOLE_RAISED, R_FIELD)
 }
 
 /// Raised panel being answered or edited: amber outline.
@@ -254,30 +263,20 @@ pub fn raised_panel_active(_: &Theme) -> container::Style {
 
 /// The amber wash behind the late-answer notice.
 pub fn notice_wash(_: &Theme) -> container::Style {
-    container::Style {
-        background: filled(LAMP_AMBER_WASH),
-        border: border(Color::TRANSPARENT, 0.0, R_FIELD),
-        ..container::Style::default()
-    }
+    fill_r(LAMP_AMBER_WASH, R_FIELD)
 }
 
 /// Error notice: alert wash with alert text.
 pub fn alert_notice(_: &Theme) -> container::Style {
     container::Style {
-        background: filled(ALERT_WASH),
-        border: border(Color::TRANSPARENT, 0.0, R_FIELD),
         text_color: Some(ALERT),
-        ..container::Style::default()
+        ..fill_r(ALERT_WASH, R_FIELD)
     }
 }
 
 /// The 36px icon tile in the data-file error window.
 pub fn alert_tile(_: &Theme) -> container::Style {
-    container::Style {
-        background: filled(ALERT_WASH),
-        border: border(Color::TRANSPARENT, 0.0, R_FIELD),
-        ..container::Style::default()
-    }
+    fill_r(ALERT_WASH, R_FIELD)
 }
 
 /// A list row: selected rows take Console Hover.
@@ -309,7 +308,7 @@ pub fn number_chip(selected: bool) -> impl Fn(&Theme) -> container::Style {
     }
 }
 
-/// A key cap such as `esc` after a ghost button label.
+/// A key cap such as `esc` after a ghost button label; also the "archived" tag.
 pub fn key_cap(_: &Theme) -> container::Style {
     container::Style {
         border: border(OUTLINE, 1.0, R_KEY),
@@ -319,68 +318,27 @@ pub fn key_cap(_: &Theme) -> container::Style {
 
 /// A key cap on an amber button: faint dark tint, no border.
 pub fn key_cap_on_amber(_: &Theme) -> container::Style {
-    container::Style {
-        background: filled(KEY_ON_AMBER),
-        border: border(Color::TRANSPARENT, 0.0, R_KEY),
-        ..container::Style::default()
-    }
-}
-
-/// The small "archived" tag in the Activities list.
-pub fn tag(_: &Theme) -> container::Style {
-    container::Style {
-        border: border(OUTLINE, 1.0, R_KEY),
-        ..container::Style::default()
-    }
-}
-
-/// The segmented control track.
-pub fn segment_track(_: &Theme) -> container::Style {
-    container::Style {
-        background: filled(CONSOLE_RAISED),
-        border: border(Color::TRANSPARENT, 0.0, R_FIELD),
-        ..container::Style::default()
-    }
-}
-
-/// The empty part of a bar.
-pub fn bar_track(_: &Theme) -> container::Style {
-    container::Style {
-        background: filled(CONSOLE_TRACK),
-        border: border(Color::TRANSPARENT, 0.0, R_BAR),
-        ..container::Style::default()
-    }
+    fill_r(KEY_ON_AMBER, R_KEY)
 }
 
 /// The filled part of a bar: amber for categories, muted for activities.
 pub fn bar_fill(color: Color) -> impl Fn(&Theme) -> container::Style {
-    move |_| container::Style {
-        background: filled(color),
-        border: border(Color::TRANSPARENT, 0.0, R_BAR),
-        ..container::Style::default()
-    }
+    move |_| fill_r(color, R_BAR)
 }
 
 /// A small round status dot (8px): green when tracking, disabled grey otherwise.
 pub fn status_dot(tracking: bool) -> impl Fn(&Theme) -> container::Style {
-    move |_| container::Style {
-        background: filled(if tracking {
-            STATUS_TRACKING
-        } else {
-            TEXT_DISABLED
-        }),
-        border: border(Color::TRANSPARENT, 0.0, 4.0),
-        ..container::Style::default()
-    }
+    let color = if tracking {
+        STATUS_TRACKING
+    } else {
+        TEXT_DISABLED
+    };
+    move |_| fill_r(color, 4.0)
 }
 
 /// The 8px amber square next to the "tally" wordmark.
 pub fn brand_mark(_: &Theme) -> container::Style {
-    container::Style {
-        background: filled(LAMP_AMBER),
-        border: border(Color::TRANSPARENT, 0.0, 2.0),
-        ..container::Style::default()
-    }
+    fill_r(LAMP_AMBER, 2.0)
 }
 
 // ---- Buttons ----
@@ -436,7 +394,7 @@ pub fn button_ghost_on(_: &Theme, _: button::Status) -> button::Style {
 /// A prompt row: Console Hover when selected, Console Raised on hover.
 pub fn row_button(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
-        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let hovered = hovered(status);
         let background = if selected {
             filled(CONSOLE_HOVER)
         } else if hovered {
@@ -490,7 +448,7 @@ pub fn segment(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Sty
 /// A tracked block in the calendar: the category colour at 20% fill, 65% edge.
 pub fn calendar_block(color: Color) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
-        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let hovered = hovered(status);
         button::Style {
             background: filled(color.scale_alpha(if hovered { 0.30 } else { 0.20 })),
             text_color: TEXT_PRIMARY,
@@ -502,7 +460,7 @@ pub fn calendar_block(color: Color) -> impl Fn(&Theme, button::Status) -> button
 
 /// An untracked working-hours gap. iced borders are solid, so no dashes.
 pub fn calendar_gap(_: &Theme, status: button::Status) -> button::Style {
-    let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+    let hovered = hovered(status);
     button::Style {
         background: hovered.then(|| Background::Color(LAMP_AMBER.scale_alpha(0.08))),
         text_color: LAMP_AMBER_INK_MUTED,
@@ -545,7 +503,7 @@ pub fn month_cell(
 ) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
         let (background, border) = day_surface(working, today);
-        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let hovered = hovered(status);
         button::Style {
             background: filled(if hovered { CONSOLE_HOVER } else { background }),
             text_color: if in_month {
@@ -563,7 +521,7 @@ pub fn month_cell(
 /// wash and outline, like a selected chip.
 pub fn menu_option(focused: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
-        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let hovered = hovered(status);
         let (background, text_color, border_color) = if focused {
             (LAMP_AMBER_WASH, LAMP_AMBER_INK, LAMP_AMBER)
         } else if hovered {
@@ -583,7 +541,7 @@ pub fn menu_option(focused: bool) -> impl Fn(&Theme, button::Status) -> button::
 /// An item in a vertical menu: transparent until hovered or current.
 pub fn menu_item(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
-        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let hovered = hovered(status);
         button::Style {
             background: (selected || hovered).then_some(Background::Color(CONSOLE_SELECTED)),
             text_color: TEXT_PRIMARY,
@@ -597,7 +555,7 @@ pub fn menu_item(selected: bool) -> impl Fn(&Theme, button::Status) -> button::S
 /// can't dash, so it uses the disabled-grey border and muted text instead.
 pub fn chip(selected: bool, dashed: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
-        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let hovered = hovered(status);
         let (background, border_color, text_color) = if selected {
             (filled(LAMP_AMBER_WASH), LAMP_AMBER, LAMP_AMBER_INK)
         } else if dashed {
@@ -625,7 +583,7 @@ pub fn chip(selected: bool, dashed: bool) -> impl Fn(&Theme, button::Status) -> 
 /// A sidebar navigation item.
 pub fn nav_item(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
-        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        let hovered = hovered(status);
         button::Style {
             background: selected.then_some(Background::Color(CONSOLE_HOVER)),
             text_color: if selected || hovered {
@@ -740,12 +698,10 @@ fn field_on(
 
 /// The prompt's 48px answer field: 8px corners.
 pub fn prompt_field(look: FieldLook) -> impl Fn(&Theme, text_input::Status) -> text_input::Style {
-    move |theme, status| text_input::Style {
-        border: Border {
-            radius: Radius::from(R_FIELD),
-            ..field(look)(theme, status).border
-        },
-        ..field(look)(theme, status)
+    move |theme, status| {
+        let mut style = field(look)(theme, status);
+        style.border.radius = R_FIELD.into();
+        style
     }
 }
 

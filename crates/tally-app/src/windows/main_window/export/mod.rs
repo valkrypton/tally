@@ -8,8 +8,8 @@ use jiff::civil::Date;
 use tally_core::export::{ExportRow, to_json, write_csv};
 use tally_core::range::{RangeSpec, RangeUnit};
 
-use crate::windows::dashboard::can_step;
-use crate::windows::widgets::{self, icon_button, primary_button};
+use crate::windows::dashboard::step_within;
+use crate::windows::widgets::{self, primary_button, step_arrow};
 use crate::{format, icons, theme};
 
 /// Lines of the file shown in the preview.
@@ -164,10 +164,7 @@ impl Export {
                 Some(Outcome::RangeChanged)
             }
             Message::Step(steps) => {
-                if !can_step(self.spec, steps, self.today) {
-                    return None;
-                }
-                self.spec = self.spec.step(steps).ok()?;
+                self.spec = step_within(self.spec, steps, self.today)?;
                 Some(Outcome::RangeChanged)
             }
             Message::Format(format) => {
@@ -184,13 +181,7 @@ impl Export {
     pub fn view(&self) -> Element<'_, Message> {
         let (title, subtitle) = format::range_title(self.spec, self.today);
         let label = |s| theme::small(s).color(theme::TEXT_MUTED).width(96);
-        let step = |handle, steps| {
-            icon_button(
-                handle,
-                16.0,
-                can_step(self.spec, steps, self.today).then_some(Message::Step(steps)),
-            )
-        };
+        let step = |handle, steps| step_arrow(handle, self.spec, steps, self.today, Message::Step);
         let range = row![
             label("Range"),
             widgets::unit_picker(self.spec.unit, false, Message::Unit),

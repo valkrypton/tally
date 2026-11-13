@@ -614,76 +614,56 @@ impl App {
     // ---- Dashboard ----
 
     fn dashboard_outcome(&mut self, outcome: dashboard::Outcome) -> Task<Message> {
-        match outcome {
-            dashboard::Outcome::RangeChanged => self.refresh(clock::now()),
+        let result = match outcome {
             dashboard::Outcome::EditTotal { activity, edit } => {
-                let result = self.edit_total(|_| Ok(activity), edit);
-                if let Some(dashboard) = &mut self.dashboard {
-                    dashboard.saved(result);
-                }
-                self.refresh(clock::now())
+                self.edit_total(|_| Ok(activity), edit)
             }
-            dashboard::Outcome::AddTime { activity, seconds } => {
-                let result = self.edit_total(
-                    |store| store.ensure_activity(&activity),
-                    DurationEdit::Add(seconds),
-                );
-                if let Some(dashboard) = &mut self.dashboard {
-                    dashboard.saved(result);
-                }
-                self.refresh(clock::now())
-            }
+            dashboard::Outcome::AddTime { activity, seconds } => self.edit_total(
+                |store| store.ensure_activity(&activity),
+                DurationEdit::Add(seconds),
+            ),
             dashboard::Outcome::Rename { id, to } => {
-                let Some(core) = &mut self.core else {
-                    return Task::none();
-                };
-                let result = match core.store.rename(id, &to) {
-                    Ok(Rename::Done) => Ok(()),
+                match self.with_store(|store| store.rename(id, &to)) {
                     Ok(Rename::Conflict(existing)) => {
                         if let Some(dashboard) = &mut self.dashboard {
                             dashboard.conflict(existing);
                         }
                         return Task::none();
                     }
-                    Err(error) => Err(error.to_string()),
-                };
-                if let Some(dashboard) = &mut self.dashboard {
-                    dashboard.saved(result);
+                    other => other.map(|_| ()),
                 }
-                self.refresh(clock::now())
             }
             dashboard::Outcome::Merge { from, into } => {
-                let Some(core) = &mut self.core else {
-                    return Task::none();
-                };
-                let result = core.store.merge(from, into).map_err(|e| e.to_string());
-                if let Some(dashboard) = &mut self.dashboard {
-                    dashboard.saved(result);
-                }
-                self.refresh(clock::now())
+                self.with_store(|store| store.merge(from, into))
             }
             dashboard::Outcome::RenameCategory { from, to } => {
-                let Some(core) = &mut self.core else {
-                    return Task::none();
-                };
-                let result = core
-                    .store
-                    .rename_category(&from, &to)
-                    .map_err(|e| e.to_string());
-                if let Some(dashboard) = &mut self.dashboard {
-                    dashboard.saved(result);
-                }
-                self.refresh(clock::now())
+                self.with_store(|store| store.rename_category(&from, &to))
             }
-            dashboard::Outcome::Focus(id) => operation::focus(id),
-            dashboard::Outcome::TogglePause => self.toggle_pause(),
-            dashboard::Outcome::EndDay => self.dispatch(CoreEvent::EndDay),
+            dashboard::Outcome::RangeChanged => return self.refresh(clock::now()),
+            dashboard::Outcome::Focus(id) => return operation::focus(id),
+            dashboard::Outcome::TogglePause => return self.toggle_pause(),
+            dashboard::Outcome::EndDay => return self.dispatch(CoreEvent::EndDay),
             dashboard::Outcome::OpenMain => {
-                self.close(WindowKind::Dashboard).chain(self.open_main())
+                return self.close(WindowKind::Dashboard).chain(self.open_main());
             }
-            dashboard::Outcome::Quit => self.quit(),
-            dashboard::Outcome::Close => self.close(WindowKind::Dashboard),
+            dashboard::Outcome::Quit => return self.quit(),
+            dashboard::Outcome::Close => return self.close(WindowKind::Dashboard),
+        };
+        if let Some(dashboard) = &mut self.dashboard {
+            dashboard.saved(result);
         }
+        self.refresh(clock::now())
+    }
+
+    /// Runs one store write, with its error as text for the window that asked.
+    fn with_store<T>(
+        &mut self,
+        write: impl FnOnce(&mut Store) -> tally_core::Result<T>,
+    ) -> Result<T, String> {
+        let Some(core) = &mut self.core else {
+            return Err(String::from("tally isn't ready"));
+        };
+        write(&mut core.store).map_err(|error| error.to_string())
     }
 
     /// Applies a dashboard edit to the activity `pick` returns, in the dashboard's range.
@@ -740,6 +720,7 @@ impl App {
     }
 
     fn load_section(&mut self, section: Section) {
+        let today = self.today(clock::now());
         let (Some(core), Some(main)) = (&self.core, &mut self.main) else {
             return;
         };
@@ -749,7 +730,6 @@ impl App {
                 Err(error) => main.activities.saved(Err(error.to_string())),
             },
             Section::Export => {
-                let today = clock::now().to_zoned(self.tz.clone()).date();
                 let rows = main
                     .export
                     .spec()
@@ -761,7 +741,6 @@ impl App {
                 }
             }
             Section::Calendar => {
-                let today = clock::now().to_zoned(self.tz.clone()).date();
                 let logged_until = core.scheduler.cursor().min(clock::now());
                 let data = calendar_data(
                     &core.store,
@@ -808,14 +787,13 @@ impl App {
         let result = match outcome {
             activities::Outcome::Focus(id) => return operation::focus(id),
             activities::Outcome::Rename { id, to } => match core.store.rename(id, &to) {
-                Ok(Rename::Done) => Ok(()),
                 Ok(Rename::Conflict(existing)) => {
                     if let Some(main) = &mut self.main {
                         main.activities.conflict(existing);
                     }
                     return Task::none();
                 }
-                Err(error) => Err(error),
+                other => other.map(|_| ()),
             },
             activities::Outcome::Merge { from, into } => core.store.merge(from, into),
             activities::Outcome::SetArchived { id, archived } => {
@@ -841,14 +819,13 @@ impl App {
                 return Task::none();
             }
             calendar::Outcome::Rename { id, to } => match core.store.rename(id, &to) {
-                Ok(Rename::Done) => Ok(()),
                 Ok(Rename::Conflict(existing)) => {
                     if let Some(main) = &mut self.main {
                         main.calendar.conflict(existing);
                     }
                     return Task::none();
                 }
-                Err(error) => Err(error),
+                other => other.map(|_| ()),
             },
             calendar::Outcome::Merge { from, into } => core.store.merge(from, into),
             calendar::Outcome::LogTime {
@@ -996,11 +973,7 @@ impl App {
     fn open_popover(&mut self, kind: WindowKind, size: Size) -> Task<Message> {
         let (id, open) = window::open(popover_settings(size));
         self.windows.insert(id, kind);
-        open.then(move |id| {
-            window::scale_factor(id).then(move |scale| {
-                window::monitor_size(id).map(move |screen| Message::Place { id, scale, screen })
-            })
-        })
+        open.then(place_task)
     }
 
     fn place(&mut self, id: window::Id, scale: f32, screen: Option<Size>) -> Task<Message> {
@@ -1034,9 +1007,7 @@ impl App {
         let Some(id) = self.windows.id(kind) else {
             return Task::none();
         };
-        window::resize(id, size).chain(window::scale_factor(id).then(move |scale| {
-            window::monitor_size(id).map(move |screen| Message::Place { id, scale, screen })
-        }))
+        window::resize(id, size).chain(place_task(id))
     }
 
     fn close(&mut self, kind: WindowKind) -> Task<Message> {
@@ -1116,6 +1087,13 @@ fn calendar_data(
         days,
         schedule: schedule.clone(),
         logged_until,
+    })
+}
+
+/// Reads the window's scale and screen, then asks to `Place` it.
+fn place_task(id: window::Id) -> Task<Message> {
+    window::scale_factor(id).then(move |scale| {
+        window::monitor_size(id).map(move |screen| Message::Place { id, scale, screen })
     })
 }
 
