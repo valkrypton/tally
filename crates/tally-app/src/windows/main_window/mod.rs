@@ -72,11 +72,7 @@ impl MainWindow {
             activities: Activities::default(),
             export: Export::new(today),
             settings: SettingsView::new(settings, data_file),
-            status: Status {
-                tracking: false,
-                text: String::new(),
-                figure: None,
-            },
+            status: Status::default(),
             notice: None,
         }
     }

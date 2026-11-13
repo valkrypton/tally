@@ -4,6 +4,20 @@ use tally_core::store::{ActivityTotal, Group};
 
 use super::*;
 
+fn edit(dashboard: &Dashboard) -> Option<&Edit> {
+    match &dashboard.editor {
+        Some(Editor::Total(edit)) => Some(edit),
+        _ => None,
+    }
+}
+
+fn rename(dashboard: &Dashboard) -> Option<&Renaming> {
+    match &dashboard.editor {
+        Some(Editor::Rename(rename)) => Some(rename),
+        _ => None,
+    }
+}
+
 const H: i64 = 3600;
 const M: i64 = 60;
 
@@ -109,15 +123,13 @@ fn presets_and_their_check_mark() {
 #[test]
 fn cannot_step_into_the_future_or_move_all() {
     let today = date(2026, 10, 7);
-    assert!(!can_step(RangeSpec::new(RangeUnit::Day, today), 1, today));
-    assert!(can_step(RangeSpec::new(RangeUnit::Day, today), -1, today));
-    assert!(can_step(
-        RangeSpec::new(RangeUnit::Day, date(2026, 10, 6)),
-        1,
-        today
-    ));
-    assert!(!can_step(RangeSpec::new(RangeUnit::Week, today), 1, today));
-    assert!(!can_step(RangeSpec::new(RangeUnit::All, today), -1, today));
+    let can =
+        |unit, anchor, steps| step_within(RangeSpec::new(unit, anchor), steps, today).is_some();
+    assert!(!can(RangeUnit::Day, today, 1));
+    assert!(can(RangeUnit::Day, today, -1));
+    assert!(can(RangeUnit::Day, date(2026, 10, 6), 1));
+    assert!(!can(RangeUnit::Week, today, 1));
+    assert!(!can(RangeUnit::All, today, -1));
 }
 
 #[test]
@@ -155,7 +167,7 @@ fn editing_a_total_emits_the_parsed_edit() {
         })
     );
     dashboard.saved(Ok(()));
-    assert!(dashboard.edit.is_none());
+    assert!(edit(&dashboard).is_none());
 }
 
 #[test]
@@ -164,7 +176,7 @@ fn unparseable_edits_are_flagged_and_not_saved() {
     dashboard.update(Message::EditTotal(2));
     dashboard.update(Message::EditInput("lots".into()));
     assert_eq!(dashboard.update(Message::SaveEdit), None);
-    assert!(dashboard.edit.as_ref().unwrap().invalid);
+    assert!(edit(&dashboard).unwrap().invalid);
 }
 
 #[test]
@@ -173,7 +185,7 @@ fn failed_saves_keep_the_editor_open() {
     dashboard.update(Message::EditTotal(2));
     dashboard.update(Message::EditInput("+15".into()));
     dashboard.saved(Err("disk full".into()));
-    assert_eq!(dashboard.edit.as_ref().unwrap().input, "+15");
+    assert_eq!(edit(&dashboard).unwrap().input, "+15");
     assert_eq!(dashboard.error.as_deref(), Some("disk full"));
 }
 
@@ -201,7 +213,7 @@ fn escape_backs_out_one_level_then_closes() {
     assert_eq!(dashboard.key(&key(Named::Escape)), None);
     assert!(!dashboard.range_menu);
     assert_eq!(dashboard.key(&key(Named::Escape)), None);
-    assert!(dashboard.edit.is_none());
+    assert!(edit(&dashboard).is_none());
     assert_eq!(dashboard.key(&key(Named::Escape)), Some(Outcome::Close));
 }
 
@@ -219,7 +231,7 @@ fn arrows_step_and_select_and_enter_edits() {
         dashboard.key(&key(Named::Enter)),
         Some(Outcome::Focus(edit_id()))
     );
-    assert_eq!(dashboard.edit.as_ref().unwrap().activity, 2);
+    assert_eq!(edit(&dashboard).unwrap().activity, 2);
 }
 
 #[test]
@@ -249,10 +261,10 @@ fn renaming_prefills_the_full_name_and_merges_on_conflict() {
         dashboard.update(Message::Rename(2)),
         Some(Outcome::Focus(rename_id()))
     );
-    assert_eq!(dashboard.rename.as_ref().unwrap().input, "Work: Meetings");
+    assert_eq!(rename(&dashboard).unwrap().input, "Work: Meetings");
     dashboard.update(Message::RenameInput(": ".into()));
     assert_eq!(dashboard.update(Message::SaveRename), None);
-    assert!(dashboard.rename.as_ref().unwrap().invalid);
+    assert!(rename(&dashboard).unwrap().invalid);
     dashboard.update(Message::RenameInput("Admin: Email".into()));
     assert_eq!(
         dashboard.update(Message::SaveRename),
@@ -267,14 +279,14 @@ fn renaming_prefills_the_full_name_and_merges_on_conflict() {
         Some(Outcome::Merge { from: 2, into: 3 })
     );
     dashboard.saved(Ok(()));
-    assert!(dashboard.rename.is_none());
+    assert!(rename(&dashboard).is_none());
 }
 
 #[test]
 fn renaming_a_category_needs_a_plain_name() {
     let mut dashboard = dashboard();
     dashboard.update(Message::RenameCategory("Work".into()));
-    assert_eq!(dashboard.rename.as_ref().unwrap().input, "Work");
+    assert_eq!(rename(&dashboard).unwrap().input, "Work");
     dashboard.update(Message::RenameInput("A: B".into()));
     assert_eq!(dashboard.update(Message::SaveRename), None);
     dashboard.update(Message::RenameInput(" Job ".into()));

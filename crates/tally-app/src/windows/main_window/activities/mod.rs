@@ -463,7 +463,7 @@ impl Activities {
             name = name.push(
                 container(text("archived").size(11).color(theme::TEXT_MUTED))
                     .padding(Padding::from([1.0, 6.0]))
-                    .style(theme::tag),
+                    .style(theme::key_cap),
             );
         }
         let line = container(

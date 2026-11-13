@@ -175,12 +175,9 @@ impl Prompt {
         Size::new(WIDTH, HEIGHT + extra)
     }
 
+    /// The late-answer notice takes one row's room.
     fn max_rows(&self) -> usize {
-        let mut max = 4;
-        if self.setup.late.is_some() {
-            max -= 1;
-        }
-        max
+        4 - usize::from(self.setup.late.is_some())
     }
 
     pub fn rows(&self) -> Vec<Row> {
@@ -379,13 +376,7 @@ impl Prompt {
             }));
         }
 
-        let look = if self.invalid {
-            theme::FieldLook::Error
-        } else if self.more.is_some() {
-            theme::FieldLook::Resting
-        } else {
-            theme::FieldLook::Active
-        };
+        let look = widgets::look(self.invalid, self.more.is_none());
         let field = text_input("What are you doing?", &self.input)
             .id(input_id())
             .on_input(Message::Input)

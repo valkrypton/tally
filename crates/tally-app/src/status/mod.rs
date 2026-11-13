@@ -6,7 +6,7 @@ use tally_core::scheduler::State;
 
 use crate::format;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Status {
     /// Draws the green dot (the only use of Tracking Green).
     pub tracking: bool,
