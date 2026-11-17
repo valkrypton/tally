@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::Result;
 use crate::range::TimeRange;
-use crate::store::{Store, day_key, from_day_key};
+use crate::store::{Store, day_key, from_day_key, from_secs, secs};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -41,8 +41,7 @@ impl ExportRow {
 impl Store {
     /// Entries (clipped to the range) by start time, then corrections by day.
     pub fn export_rows(&self, range: &TimeRange) -> Result<Vec<ExportRow>> {
-        let (start, end) = (range.start.as_second(), range.end.as_second());
-        let mut rows = Vec::new();
+        let (start, end) = (secs(range.start), secs(range.end));
         let mut stmt = self.conn().prepare(
             "SELECT MAX(e.start_at, ?1), MIN(e.end_at, ?2), c.name, a.name, e.source
              FROM entries e JOIN activities a ON a.id = e.activity_id
@@ -52,16 +51,14 @@ impl Store {
         )?;
         let entries = stmt.query_map(params![start, end], |row| {
             Ok(ExportRow::Entry {
-                start: Timestamp::from_second(row.get(0)?).expect("valid timestamp"),
-                end: Timestamp::from_second(row.get(1)?).expect("valid timestamp"),
+                start: from_secs(row.get(0)?),
+                end: from_secs(row.get(1)?),
                 category: row.get(2)?,
                 activity: row.get(3)?,
                 source: row.get(4)?,
             })
         })?;
-        for row in entries {
-            rows.push(row?);
-        }
+        let mut rows = entries.collect::<rusqlite::Result<Vec<_>>>()?;
         let mut stmt = self.conn().prepare(
             "SELECT r.day, c.name, a.name, r.seconds
              FROM corrections r JOIN activities a ON a.id = r.activity_id
@@ -80,9 +77,7 @@ impl Store {
                 })
             },
         )?;
-        for row in corrections {
-            rows.push(row?);
-        }
+        rows.extend(corrections.collect::<rusqlite::Result<Vec<_>>>()?);
         Ok(rows)
     }
 }

@@ -22,7 +22,7 @@ pub struct Group {
     pub activities: Vec<ActivityTotal>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Totals {
     /// Largest first.
     pub groups: Vec<Group>,
@@ -103,7 +103,7 @@ impl Store {
     }
 
     /// One activity's total in the range.
-    pub fn activity_total(&self, id: ActivityId, range: &TimeRange) -> Result<i64> {
+    pub(crate) fn activity_total(&self, id: ActivityId, range: &TimeRange) -> Result<i64> {
         Ok(self.conn.query_row(
             "SELECT IFNULL((SELECT SUM(MIN(end_at, ?3) - MAX(start_at, ?2)) FROM entries
                             WHERE activity_id = ?1 AND end_at > ?2 AND start_at < ?3), 0)

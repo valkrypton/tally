@@ -10,11 +10,10 @@ use std::path::Path;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use rusqlite::{Connection, OptionalExtension, params};
-use rusqlite_migration::{M, Migrations};
 
-use crate::Result;
 use crate::scheduler::{NewEntry, Snapshot};
 use crate::settings::Settings;
+use crate::{Error, Result};
 
 pub use activities::{ActivityRow, Rename};
 pub use entries::EntryRow;
@@ -22,9 +21,10 @@ pub use totals::{ActivityTotal, Group, Totals};
 
 pub type ActivityId = i64;
 
-const MIGRATIONS: &[M<'static>] = &[
-    M::up(include_str!("migrations/001_initial.sql")),
-    M::up(include_str!("migrations/002_manual_source.sql")),
+/// Applied in order; `PRAGMA user_version` counts how many have run.
+const MIGRATIONS: &[&str] = &[
+    include_str!("migrations/001_initial.sql"),
+    include_str!("migrations/002_manual_source.sql"),
 ];
 
 pub struct Store {
@@ -43,7 +43,7 @@ impl Store {
     fn init(mut conn: Connection) -> Result<Self> {
         conn.pragma_update(None, "foreign_keys", true)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
-        Migrations::from_slice(MIGRATIONS).to_latest(&mut conn)?;
+        migrate(&mut conn)?;
         Ok(Self { conn })
     }
 
@@ -111,12 +111,28 @@ impl Store {
     }
 }
 
+/// Runs the migrations this file has not seen yet, in one transaction.
+fn migrate(conn: &mut Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+    let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let done = usize::try_from(version).unwrap_or(usize::MAX);
+    if done > MIGRATIONS.len() {
+        return Err(Error::NewerDatabase);
+    }
+    for (index, sql) in (done..).zip(&MIGRATIONS[done..]) {
+        tx.execute_batch(sql)?;
+        tx.pragma_update(None, "user_version", index as i64 + 1)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 /// Timestamps are stored as whole Unix seconds.
-fn secs(ts: Timestamp) -> i64 {
+pub(crate) fn secs(ts: Timestamp) -> i64 {
     ts.as_second()
 }
 
-fn from_secs(seconds: i64) -> Timestamp {
+pub(crate) fn from_secs(seconds: i64) -> Timestamp {
     Timestamp::from_second(seconds).expect("stored timestamps are in range")
 }
 

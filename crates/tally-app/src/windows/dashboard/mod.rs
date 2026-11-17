@@ -17,7 +17,9 @@ use tally_core::range::{RangeSpec, RangeUnit};
 use tally_core::store::{ActivityId, Totals};
 
 use super::KeyPress;
-use super::widgets::{self, bar, footer, ghost_button, icon_button, primary_button, status_line};
+use super::widgets::{
+    self, bar, footer, ghost_button, icon_button, primary_button, status_line, step_arrow,
+};
 use crate::status::Status;
 use crate::{format, icons, theme};
 
@@ -79,15 +81,15 @@ pub fn current_preset(spec: RangeSpec, today: Date) -> Option<Preset> {
     })
 }
 
-/// Whether ‹ or › can move. "All" never moves, and the future is off limits.
-pub fn can_step(spec: RangeSpec, steps: i32, today: Date) -> bool {
+/// The range one ‹ or › away, if it can move. "All" never moves, and the future is
+/// off limits.
+pub fn step_within(spec: RangeSpec, steps: i32, today: Date) -> Option<RangeSpec> {
     if spec.unit == RangeUnit::All {
-        return false;
+        return None;
     }
-    match spec.step(steps).and_then(|next| next.days()) {
-        Ok((first, _)) => steps < 0 || first <= today,
-        Err(_) => false,
-    }
+    let next = spec.step(steps).ok()?;
+    let (first, _) = next.days().ok()?;
+    (steps < 0 || first <= today).then_some(next)
 }
 
 /// What a total becomes after an edit.
@@ -247,6 +249,14 @@ struct Add {
     invalid: bool,
 }
 
+/// The one inline editor that can be open.
+#[derive(Debug, Clone)]
+enum Editor {
+    Total(Edit),
+    Rename(Renaming),
+    Add(Add),
+}
+
 #[derive(Debug, Clone)]
 pub struct Dashboard {
     spec: RangeSpec,
@@ -259,9 +269,7 @@ pub struct Dashboard {
     menu: bool,
     /// Keyboard selection among editable rows.
     selected: Option<usize>,
-    edit: Option<Edit>,
-    rename: Option<Renaming>,
-    add: Option<Add>,
+    editor: Option<Editor>,
     error: Option<String>,
 }
 
@@ -271,24 +279,13 @@ impl Dashboard {
             spec: RangeSpec::new(RangeUnit::Day, today),
             today,
             tz,
-            totals: Totals {
-                groups: Vec::new(),
-                seconds: 0,
-                first: None,
-                last: None,
-            },
-            status: Status {
-                tracking: false,
-                text: String::new(),
-                figure: None,
-            },
+            totals: Totals::default(),
+            status: Status::default(),
             paused: false,
             range_menu: false,
             menu: false,
             selected: None,
-            edit: None,
-            rename: None,
-            add: None,
+            editor: None,
             error: None,
         }
     }
@@ -315,9 +312,7 @@ impl Dashboard {
     pub fn saved(&mut self, result: Result<(), String>) {
         match result {
             Ok(()) => {
-                self.edit = None;
-                self.rename = None;
-                self.add = None;
+                self.editor = None;
                 self.error = None;
             }
             Err(error) => self.error = Some(error),
@@ -326,21 +321,19 @@ impl Dashboard {
 
     /// The store said a rename collides with `existing`: Enter again merges into it.
     pub fn conflict(&mut self, existing: ActivityId) {
-        if let Some(rename) = &mut self.rename {
+        if let Some(Editor::Rename(rename)) = &mut self.editor {
             rename.merge_into = Some(existing);
         }
     }
 
     fn start_rename(&mut self, target: Target, input: String) -> Option<Outcome> {
-        self.edit = None;
-        self.add = None;
         self.error = None;
-        self.rename = Some(Renaming {
+        self.editor = Some(Editor::Rename(Renaming {
             target,
             input,
             invalid: false,
             merge_into: None,
-        });
+        }));
         Some(Outcome::Focus(rename_id()))
     }
 
@@ -363,8 +356,10 @@ impl Dashboard {
     fn set_spec(&mut self, spec: RangeSpec) -> Option<Outcome> {
         self.spec = spec;
         self.range_menu = false;
-        self.edit = None;
-        self.rename = None;
+        // An add in progress survives a range change; row editors belong to the old rows.
+        if !matches!(self.editor, Some(Editor::Add(_))) {
+            self.editor = None;
+        }
         self.selected = None;
         Some(Outcome::RangeChanged)
     }
@@ -380,10 +375,7 @@ impl Dashboard {
             // Keep the anchor, so switching to Week while viewing a day shows that day's week.
             Message::Unit(unit) => self.set_spec(RangeSpec::new(unit, self.spec.anchor)),
             Message::Step(steps) => {
-                if !can_step(self.spec, steps, self.today) {
-                    return None;
-                }
-                let next = self.spec.step(steps).ok()?;
+                let next = step_within(self.spec, steps, self.today)?;
                 self.set_spec(next)
             }
             Message::CloseMenus => {
@@ -396,27 +388,27 @@ impl Dashboard {
                     .editable()
                     .into_iter()
                     .find(|(id, _, _)| *id == activity)?;
-                self.add = None;
-                self.rename = None;
                 self.error = None;
-                self.edit = Some(Edit {
+                self.editor = Some(Editor::Total(Edit {
                     activity,
                     name,
                     current,
                     input: String::new(),
                     invalid: false,
-                });
+                }));
                 Some(Outcome::Focus(edit_id()))
             }
             Message::EditInput(value) => {
-                if let Some(edit) = &mut self.edit {
+                if let Some(Editor::Total(edit)) = &mut self.editor {
                     edit.input = value;
                     edit.invalid = false;
                 }
                 None
             }
             Message::SaveEdit => {
-                let edit = self.edit.as_mut()?;
+                let Some(Editor::Total(edit)) = &mut self.editor else {
+                    return None;
+                };
                 match parse_edit(&edit.input) {
                     Ok(parsed) => Some(Outcome::EditTotal {
                         activity: edit.activity,
@@ -436,7 +428,7 @@ impl Dashboard {
                 self.start_rename(Target::Category(category.clone()), category)
             }
             Message::RenameInput(value) => {
-                if let Some(rename) = &mut self.rename {
+                if let Some(Editor::Rename(rename)) = &mut self.editor {
                     rename.input = value;
                     rename.invalid = false;
                     rename.merge_into = None;
@@ -444,7 +436,9 @@ impl Dashboard {
                 None
             }
             Message::SaveRename => {
-                let rename = self.rename.as_mut()?;
+                let Some(Editor::Rename(rename)) = &mut self.editor else {
+                    return None;
+                };
                 let outcome = match &rename.target {
                     Target::Activity(id) => {
                         match (rename.merge_into, ActivityName::parse(&rename.input)) {
@@ -465,29 +459,29 @@ impl Dashboard {
                 outcome
             }
             Message::StartAdd => {
-                self.edit = None;
-                self.rename = None;
                 self.menu = false;
                 self.error = None;
-                self.add = Some(Add::default());
+                self.editor = Some(Editor::Add(Add::default()));
                 Some(Outcome::Focus(add_activity_id()))
             }
             Message::AddActivity(value) => {
-                if let Some(add) = &mut self.add {
+                if let Some(Editor::Add(add)) = &mut self.editor {
                     add.activity = value;
                     add.invalid = false;
                 }
                 None
             }
             Message::AddDuration(value) => {
-                if let Some(add) = &mut self.add {
+                if let Some(Editor::Add(add)) = &mut self.editor {
                     add.duration = value;
                     add.invalid = false;
                 }
                 None
             }
             Message::SaveAdd => {
-                let add = self.add.as_mut()?;
+                let Some(Editor::Add(add)) = &mut self.editor else {
+                    return None;
+                };
                 match (
                     ActivityName::parse(&add.activity),
                     parse_add_duration(&add.duration),
@@ -504,10 +498,8 @@ impl Dashboard {
                     self.range_menu = false;
                     self.menu = false;
                     None
-                } else if self.edit.is_some() || self.rename.is_some() || self.add.is_some() {
-                    self.edit = None;
-                    self.rename = None;
-                    self.add = None;
+                } else if self.editor.is_some() {
+                    self.editor = None;
                     self.error = None;
                     None
                 } else {
@@ -535,7 +527,7 @@ impl Dashboard {
     /// Esc backs out one level; ←/→ step the range; ↑/↓ choose a row and Enter edits
     /// it; Tab moves between the add-time fields.
     pub fn key(&mut self, press: &KeyPress) -> Option<Outcome> {
-        let typing = self.edit.is_some() || self.rename.is_some() || self.add.is_some();
+        let typing = self.editor.is_some();
         match press.key.as_ref() {
             Key::Named(Named::Escape) => self.update(Message::Cancel),
             Key::Named(Named::ArrowLeft) if !typing => self.update(Message::Step(-1)),
@@ -553,7 +545,7 @@ impl Dashboard {
                 let (id, _, _) = self.editable().get(self.selected?)?.clone();
                 self.update(Message::EditTotal(id))
             }
-            Key::Named(Named::Tab) if self.add.is_some() => {
+            Key::Named(Named::Tab) if matches!(self.editor, Some(Editor::Add(_))) => {
                 Some(Outcome::Focus(if press.modifiers.shift() {
                     add_activity_id()
                 } else {
@@ -641,13 +633,7 @@ impl Dashboard {
             theme::button_ghost
         })
         .on_press(Message::ToggleRangeMenu);
-        let step = |handle, steps| {
-            icon_button(
-                handle,
-                16.0,
-                can_step(self.spec, steps, self.today).then_some(Message::Step(steps)),
-            )
-        };
+        let step = |handle, steps| step_arrow(handle, self.spec, steps, self.today, Message::Step);
         container(
             row![
                 picker,
@@ -696,7 +682,7 @@ impl Dashboard {
 
     fn list(&self) -> Element<'_, Message> {
         let all = lines(&self.totals);
-        if all.is_empty() && self.add.is_none() {
+        if all.is_empty() && !matches!(self.editor, Some(Editor::Add(_))) {
             return container(
                 theme::small("Nothing tracked in this range yet.").color(theme::TEXT_MUTED),
             )
@@ -707,10 +693,6 @@ impl Dashboard {
         let selected_id = self.selected.and_then(|i| editable.get(i).copied());
         let mut list = column![].spacing(theme::S_HAIR);
         for (index, line) in all.iter().enumerate() {
-            let editing = self
-                .edit
-                .as_ref()
-                .filter(|e| Some(e.activity) == line.activity);
             if line.kind != LineKind::Activity && index > 0 {
                 list = list.push(Space::new().height(10));
             }
@@ -718,16 +700,17 @@ impl Dashboard {
                 Some(id) => Target::Activity(id),
                 None => Target::Category(line.name.clone()),
             };
-            let renaming = self.rename.as_ref().filter(|r| r.target == target);
-            list = list.push(match (editing, renaming) {
-                (Some(edit), _) => self.edit_panel(edit, line.kind),
-                (None, Some(rename)) => self.rename_panel(rename, line.kind),
-                (None, None) => {
-                    self.line_view(line, selected_id.is_some() && line.activity == selected_id)
+            list = list.push(match &self.editor {
+                Some(Editor::Total(edit)) if Some(edit.activity) == line.activity => {
+                    self.edit_panel(edit, line.kind)
                 }
+                Some(Editor::Rename(rename)) if rename.target == target => {
+                    self.rename_panel(rename, line.kind)
+                }
+                _ => self.line_view(line, selected_id.is_some() && line.activity == selected_id),
             });
         }
-        if let Some(add) = &self.add {
+        if let Some(Editor::Add(add)) = &self.editor {
             list = list.push(Space::new().height(12));
             list = list.push(self.add_panel(add));
         }
@@ -828,15 +811,7 @@ impl Dashboard {
                 .into(),
             None => theme::label("Type a new total, or +/- a change").into(),
         };
-        let hint = row![
-            summary,
-            Space::new().width(Length::Fill),
-            text("enter").font(theme::MONO).size(12),
-            theme::label(" saves · "),
-            text("esc").font(theme::MONO).size(12),
-            theme::label(" cancels"),
-        ]
-        .align_y(Vertical::Center);
+        let hint = keys_hint(summary);
         let panel = column![
             row![theme::body(edit.name.clone()).width(Length::Fill), field]
                 .spacing(theme::S_MD)
@@ -862,26 +837,12 @@ impl Dashboard {
             .size(14)
             .padding(Padding::from([9.0, 10.0]))
             .style(theme::inset_field(widgets::look(invalid, false)));
-        let summary = if rename.merge_into.is_some() {
-            theme::label("That name is taken. Enter merges into it").color(theme::LAMP_AMBER)
-        } else if invalid && category {
-            theme::label("Type a category name").color(theme::ALERT)
-        } else if invalid {
-            theme::label("Type a name, or Category: Name").color(theme::ALERT)
-        } else if category {
-            theme::label("Same names merge")
-        } else {
-            theme::label("Renames it everywhere")
+        let summary = match (category, invalid) {
+            (true, true) => theme::label("Type a category name").color(theme::ALERT),
+            (true, false) => theme::label("Same names merge"),
+            (false, _) => widgets::rename_hint(rename.merge_into.is_some(), invalid),
         };
-        let hint = row![
-            summary,
-            Space::new().width(Length::Fill),
-            text("enter").font(theme::MONO).size(12),
-            theme::label(" saves · "),
-            text("esc").font(theme::MONO).size(12),
-            theme::label(" cancels"),
-        ]
-        .align_y(Vertical::Center);
+        let hint = keys_hint(summary);
         self.panel_frame(column![field, hint], kind)
     }
 
@@ -957,7 +918,7 @@ impl Dashboard {
     }
 
     fn actions(&self) -> Element<'_, Message> {
-        if let Some(add) = &self.add {
+        if let Some(Editor::Add(add)) = &self.editor {
             let ready = ActivityName::parse(&add.activity).is_ok()
                 && parse_add_duration(&add.duration).is_some();
             return row![
@@ -974,7 +935,7 @@ impl Dashboard {
             .align_y(Vertical::Center)
             .into();
         }
-        let primary = if self.edit.is_some() {
+        let primary = if matches!(self.editor, Some(Editor::Total(_))) {
             primary_button(
                 String::from("Save"),
                 Some(icons::check()),
@@ -1065,6 +1026,20 @@ impl Dashboard {
         .style(theme::floating_menu)
         .into()
     }
+}
+
+/// An editor's hint on the left, `enter saves · esc cancels` on the right.
+fn keys_hint<'a>(summary: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
+    row![
+        summary.into(),
+        Space::new().width(Length::Fill),
+        text("enter").font(theme::MONO).size(12),
+        theme::label(" saves · "),
+        text("esc").font(theme::MONO).size(12),
+        theme::label(" cancels"),
+    ]
+    .align_y(Vertical::Center)
+    .into()
 }
 
 #[cfg(test)]

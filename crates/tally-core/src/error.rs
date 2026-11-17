@@ -10,8 +10,8 @@ pub enum Error {
     InvalidDuration(String),
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
-    #[error("database migration failed: {0}")]
-    Migration(#[from] rusqlite_migration::Error),
+    #[error("the data file is from a newer version of tally")]
+    NewerDatabase,
     #[error("could not serialize data: {0}")]
     Json(#[from] serde_json::Error),
     #[error("could not write CSV: {0}")]

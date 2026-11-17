@@ -40,17 +40,6 @@ impl Default for WeeklySchedule {
 }
 
 impl WeeklySchedule {
-    /// Every day, all day. Handy for tests and for people who want no schedule.
-    pub fn always() -> Self {
-        let hours = WorkHours {
-            start: Time::MIN,
-            end: Time::MAX,
-        };
-        Self {
-            days: [Some(hours); 7],
-        }
-    }
-
     /// The working period `[start, end)` that contains `at`, if any.
     pub fn period_containing(
         &self,

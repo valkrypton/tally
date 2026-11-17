@@ -4,13 +4,10 @@
 use jiff::Timestamp;
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
-use tally_core::duration::format_hm;
 use tally_core::range::{RangeSpec, RangeUnit};
 
 /// A duration as `6h 35m` (the Duration Rule). Negative values show as `0h 00m`.
-pub fn duration(seconds: i64) -> String {
-    format_hm(seconds)
-}
+pub use tally_core::duration::format_hm as duration;
 
 /// A short duration for sentences: `37 min` under an hour, otherwise `1h 05m`.
 pub fn short_duration(seconds: i64) -> String {
@@ -18,7 +15,7 @@ pub fn short_duration(seconds: i64) -> String {
     if minutes < 60 {
         format!("{minutes} min")
     } else {
-        format_hm(seconds)
+        duration(seconds)
     }
 }
 

@@ -4,7 +4,7 @@
 use iced::alignment::Vertical;
 use iced::widget::{Space, button, column, container, row, svg, text};
 use iced::{Color, Element, Length, Padding};
-use tally_core::range::RangeUnit;
+use tally_core::range::{RangeSpec, RangeUnit};
 
 use crate::theme::{self, FieldLook};
 
@@ -127,6 +127,29 @@ pub fn footer<'a, M: 'a>(content: impl Into<Element<'a, M>>) -> Element<'a, M> {
     column![divider(), container(content).padding(theme::S_SM)].into()
 }
 
+/// A ‹ or › button, disabled when the range can't move that way.
+pub fn step_arrow<'a, M: Clone + 'a>(
+    handle: svg::Handle,
+    spec: RangeSpec,
+    steps: i32,
+    today: jiff::civil::Date,
+    on_step: impl Fn(i32) -> M,
+) -> Element<'a, M> {
+    let enabled = super::dashboard::step_within(spec, steps, today).is_some();
+    icon_button(handle, 16.0, enabled.then(|| on_step(steps)))
+}
+
+/// The hint under an activity rename: the merge offer, the error, or what Save does.
+pub fn rename_hint<'a>(merging: bool, invalid: bool) -> text::Text<'a> {
+    if merging {
+        theme::label("That name is taken. Enter merges into it").color(theme::LAMP_AMBER)
+    } else if invalid {
+        theme::label("Type a name, or Category: Name").color(theme::ALERT)
+    } else {
+        theme::label("Renames it everywhere")
+    }
+}
+
 /// A full-width 1px hairline.
 pub fn divider<'a, M: 'a>() -> Element<'a, M> {
     container(Space::new())
@@ -171,7 +194,7 @@ pub fn unit_picker<'a, M: Clone + 'a>(
     });
     container(row(options).spacing(theme::S_HAIR))
         .padding(3)
-        .style(theme::segment_track)
+        .style(theme::raised_panel)
         .into()
 }
 
@@ -202,7 +225,7 @@ pub fn bar<'a, M: 'a>(value: i64, max: i64, thickness: f32, fill: Color) -> Elem
     container(inner)
         .width(Length::Fill)
         .height(thickness)
-        .style(theme::bar_track)
+        .style(theme::bar_fill(theme::CONSOLE_TRACK))
         .into()
 }
 

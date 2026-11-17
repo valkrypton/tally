@@ -62,7 +62,13 @@ fn restored_app(name: &str, due: Timestamp) -> App {
     paths.create_data_dir().unwrap();
     let store = Store::open(&paths.database).unwrap();
     let settings = Settings {
-        schedule: tally_core::settings::WeeklySchedule::always(),
+        // Every day, all day.
+        schedule: WeeklySchedule {
+            days: [Some(tally_core::settings::WorkHours {
+                start: jiff::civil::Time::MIN,
+                end: jiff::civil::Time::MAX,
+            }); 7],
+        },
         ..Settings::default()
     };
     store.save_settings(&settings).unwrap();

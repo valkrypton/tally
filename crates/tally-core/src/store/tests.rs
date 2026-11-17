@@ -67,10 +67,9 @@ fn data_survives_reopening_the_file() {
 
 #[test]
 fn version_1_files_migrate_and_accept_manual_entries() {
-    let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-    rusqlite_migration::Migrations::from_slice(&MIGRATIONS[..1])
-        .to_latest(&mut conn)
-        .unwrap();
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch(MIGRATIONS[0]).unwrap();
+    conn.pragma_update(None, "user_version", 1).unwrap();
     conn.execute_batch(
         "INSERT INTO activities (id, name) VALUES (1, 'Lunch');
          INSERT INTO entries (activity_id, start_at, end_at, source) VALUES (1, 100, 200, 'prompt');",
@@ -94,4 +93,15 @@ fn version_1_files_migrate_and_accept_manual_entries() {
         .collect::<rusqlite::Result<_>>()
         .unwrap();
     assert_eq!(sources, ["prompt", "manual"]);
+}
+
+#[test]
+fn files_from_a_newer_version_are_refused() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.pragma_update(None, "user_version", MIGRATIONS.len() as i64 + 1)
+        .unwrap();
+    assert!(matches!(
+        Store::init(conn),
+        Err(crate::Error::NewerDatabase)
+    ));
 }

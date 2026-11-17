@@ -17,8 +17,8 @@ use tally_core::settings::WeeklySchedule;
 use tally_core::store::{ActivityId, EntryRow, Totals};
 
 use crate::windows::KeyPress;
-use crate::windows::dashboard::{self, LineKind, can_step};
-use crate::windows::widgets::{self, divider, ghost_button, icon_button, primary_button};
+use crate::windows::dashboard::{self, LineKind, step_within};
+use crate::windows::widgets::{self, divider, ghost_button, primary_button, step_arrow};
 use crate::{format, icons, theme};
 use layout::{Block, Slot, category_color, portion};
 
@@ -164,10 +164,7 @@ impl Calendar {
             }
             Message::Unit(_) => None,
             Message::Step(steps) => {
-                if !can_step(self.spec, steps, self.today) {
-                    return None;
-                }
-                let next = self.spec.step(steps).ok()?;
+                let next = step_within(self.spec, steps, self.today)?;
                 self.set_spec(next)
             }
             Message::OpenDay(day) => self.set_spec(RangeSpec::new(RangeUnit::Day, day)),
@@ -253,12 +250,16 @@ impl Calendar {
             .unwrap_or_default()
     }
 
+    /// The first and last day the range covers.
+    fn bounds(&self) -> (Date, Date) {
+        self.spec
+            .days()
+            .unwrap_or((self.spec.anchor, self.spec.anchor))
+    }
+
     /// The days the range covers.
     fn view_days(&self) -> Vec<Date> {
-        let (first, last) = self
-            .spec
-            .days()
-            .unwrap_or((self.spec.anchor, self.spec.anchor));
+        let (first, last) = self.bounds();
         first.series(1.day()).take_while(|d| *d <= last).collect()
     }
 
@@ -307,18 +308,9 @@ impl Calendar {
             .style(theme::segment(selected))
             .on_press(Message::Unit(unit))
         };
-        let step = |handle, steps| {
-            icon_button(
-                handle,
-                16.0,
-                can_step(self.spec, steps, self.today).then_some(Message::Step(steps)),
-            )
-        };
+        let step = |handle, steps| step_arrow(handle, self.spec, steps, self.today, Message::Step);
         let total = self.data.as_ref().map_or(0, |data| {
-            let (first, last) = self
-                .spec
-                .days()
-                .unwrap_or((self.spec.anchor, self.spec.anchor));
+            let (first, last) = self.bounds();
             data.days
                 .iter()
                 .filter(|(day, _)| (first..=last).contains(day))
@@ -336,7 +328,7 @@ impl Calendar {
                 .spacing(theme::S_HAIR)
             )
             .padding(3)
-            .style(theme::segment_track),
+            .style(theme::raised_panel),
             Space::new().width(Length::Fill),
             step(icons::chevron_left(), -1),
             text(format::range_title(self.spec, self.today).1)
@@ -619,15 +611,10 @@ impl Calendar {
             .size(14)
             .padding(Padding::from([9.0, 10.0]))
             .style(theme::inset_field(widgets::look(editor.invalid, false)));
-        let hint = if editor.merge_into.is_some() {
-            Some(theme::label("That name is taken. Enter merges into it").color(theme::LAMP_AMBER))
-        } else if editor.invalid {
-            Some(theme::label("Type a name, or Category: Name").color(theme::ALERT))
-        } else if matches!(editor.target, Target::Block(_)) {
-            Some(theme::label("Renames it everywhere"))
-        } else {
-            None
-        };
+        let merging = editor.merge_into.is_some();
+        // A gap being logged has nothing to say until something goes wrong.
+        let quiet = matches!(editor.target, Target::Gap { .. }) && !merging && !editor.invalid;
+        let hint = (!quiet).then(|| widgets::rename_hint(merging, editor.invalid));
         column![theme::title(heading), field]
             .extend(hint.map(Element::from))
             .push(
@@ -640,10 +627,7 @@ impl Calendar {
     }
 
     fn month_view<'a>(&'a self, data: &'a CalendarData) -> Element<'a, Message> {
-        let (first, last) = self
-            .spec
-            .days()
-            .unwrap_or((self.spec.anchor, self.spec.anchor));
+        let (first, last) = self.bounds();
         let weekdays = row(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
             .map(|name| theme::label(name).width(Length::Fill).into()))
         .padding(Padding::from([0.0, 8.0]))

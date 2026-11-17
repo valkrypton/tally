@@ -12,7 +12,7 @@ use jiff::tz::TimeZone;
 use tally_core::ActivityName;
 
 use super::KeyPress;
-use super::widgets::{footer, ghost_button, primary_button};
+use super::widgets::{self, footer, ghost_button, primary_button};
 use crate::{format, theme};
 
 pub const SIZE: Size = Size::new(400.0, 420.0);
@@ -273,11 +273,7 @@ fn field_block<'a>(
     active: bool,
     extra: Option<Element<'a, Message>>,
 ) -> Element<'a, Message> {
-    let look = if active {
-        theme::FieldLook::Active
-    } else {
-        theme::FieldLook::Resting
-    };
+    let look = widgets::look(false, active);
     let mut block = column![
         container(
             row![
